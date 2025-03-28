@@ -183,3 +183,42 @@ def add_idqn_arguments(parser: argparse.ArgumentParser):
         type=int,
         default=10,
     )
+
+
+@output_added_arguments
+def add_hldqn_arguments(parser: argparse.ArgumentParser):
+    parser.add_argument(
+        "-tuf",
+        "--target_update_frequency",
+        help="Number of training steps before updating the target Q-network. (T)",
+        type=int,
+        default=200,
+    )
+    parser.add_argument(
+        "-nb",
+        "--n_bins",
+        help="Number of bins composing the histogram.",
+        type=int,
+        default=50,
+    )
+    parser.add_argument(
+        "-minn",
+        "--min_value",
+        help="Value of the lowest learnable value of the target.",
+        type=float,
+        default=200,
+    )
+    parser.add_argument(
+        "-maxn",
+        "--max_value",
+        help="Value of the highest learnable value of the target.",
+        type=float,
+        default=200,
+    )
+    parser.add_argument(
+        "-sigma",
+        "--sigma",
+        help="Standard deviation of each target sample.",
+        type=float,
+        default=6,
+    )
