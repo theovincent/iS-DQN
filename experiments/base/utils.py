@@ -84,10 +84,13 @@ def check_experiment(p: dict):
 
 def store_params(p: dict, shared_params: List[str], agent_params: List[str]):
     os.makedirs(p["save_path"], exist_ok=True)
+    # parameters.json are stored outside the algorithm folder (in the experiment folder)
     params_path = os.path.join(p["save_path"], "..", "parameters.json")
 
+    # collect the existing parameters
     if os.path.exists(params_path):
-        # when many seeds are launched at the same time, the params exist but they are still being dumped
+        # PS: when many seeds are launched at the same time, the params exist but they are still being dumped.
+        #     This is why a json.JSONDecodeError might be raised, in which case we wait until the parameters are dumped.
         loaded = False
         while not loaded:
             try:
@@ -103,18 +106,19 @@ def store_params(p: dict, shared_params: List[str], agent_params: List[str]):
             if shared_param not in ["seed", "disable_wandb"]:
                 params_dict["shared_parameters"][shared_param] = p[shared_param]
 
+    # if the algorithms parameters were not stored in a previous run, we store them.
     if p["algo_name"] not in params_dict.keys():
-        # store algorithms parameters
         params_dict[p["algo_name"]] = {}
         for agent_param in agent_params:
             params_dict[p["algo_name"]][agent_param] = p[agent_param]
 
-    # sort keys in a uniform order
+    # sort keys in a ordered manner
     ordered_params_dict = {
         algo_name: params_dict[algo_name] for algo_name in ["shared_parameters"] + sorted(list(params_dict.keys())[1:])
     }
 
     json.dump(ordered_params_dict, open(params_path, "w"), indent=4)
+
 
 
 def save_data(p: dict, episode_returns: list, episode_lengths: list, model):
