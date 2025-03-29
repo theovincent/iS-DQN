@@ -206,19 +206,19 @@ def add_hldqn_arguments(parser: argparse.ArgumentParser):
         "--min_value",
         help="Value of the lowest learnable value of the target.",
         type=float,
-        default=200,
+        default=-100,
     )
     parser.add_argument(
         "-maxn",
         "--max_value",
         help="Value of the highest learnable value of the target.",
         type=float,
-        default=200,
+        default=100,
     )
     parser.add_argument(
         "-sigma",
         "--sigma",
-        help="Standard deviation of each target sample.",
+        help="Standard deviation of each target sample. If \sigma / \eta = 0.75, then \sigma = 0.75 * (max_value - min_value) / n_bins",
         type=float,
-        default=6,
+        default=3,
     )

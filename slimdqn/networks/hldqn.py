@@ -29,8 +29,11 @@ class HLDQN:
         sigma: float,
         adam_eps: float = 1e-8,
     ):
-        self.network = DQNNet(features, architecture_type, n_actions * n_bins)
-        self.network.apply_fn = lambda params, state: self.network.apply(params, state).reshape((n_actions, n_bins))
+        self.n_bins = n_bins
+        self.network = DQNNet(features, architecture_type, n_actions * self.n_bins)
+        self.network.apply_fn = lambda params, state: self.network.apply(params, state).reshape(
+            (n_actions, self.n_bins)
+        )
         self.params = self.network.init(key, jnp.zeros(observation_dim, dtype=jnp.float32))
 
         self.optimizer = optax.adam(learning_rate, eps=adam_eps)
@@ -42,7 +45,8 @@ class HLDQN:
         self.update_to_data = update_to_data
         self.target_update_frequency = target_update_frequency
         self.cumulated_loss = 0
-        self.support = jnp.linspace(min_value, max_value, n_bins + 1, dtype=jnp.float32)
+        self.cumulated_extreme_bins_prob = np.array([0, 0, 0])
+        self.support = jnp.linspace(min_value, max_value, self.n_bins + 1, dtype=jnp.float32)
         self.bin_centers = (self.support[:-1] + self.support[1:]) / 2
         self.sigma = sigma
 
@@ -50,18 +54,27 @@ class HLDQN:
         if step % self.update_to_data == 0:
             batch_samples = replay_buffer.sample()
 
-            self.params, self.optimizer_state, loss = self.learn_on_batch(
+            self.params, self.optimizer_state, loss, extreme_bins_prob = self.learn_on_batch(
                 self.params, self.target_params, self.optimizer_state, batch_samples
             )
             self.cumulated_loss += loss
+            self.cumulated_extreme_bins_prob += extreme_bins_prob
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
             self.target_params = self.params.copy()
 
-            logs = {"loss": self.cumulated_loss / (self.target_update_frequency / self.update_to_data)}
-            print(logs)
+            logs = {
+                "loss": self.cumulated_loss / (self.target_update_frequency / self.update_to_data),
+                "networks/min_bin_prob": self.cumulated_extreme_bins_prob[0]
+                / (self.target_update_frequency / self.update_to_data),
+                "networks/mean_bin_prob": self.cumulated_extreme_bins_prob[1]
+                / (self.target_update_frequency / self.update_to_data),
+                "networks/max_bin_prob": self.cumulated_extreme_bins_prob[2]
+                / (self.target_update_frequency / self.update_to_data),
+            }
             self.cumulated_loss = 0
+            self.cumulated_extreme_bins_prob = np.array([0, 0, 0])
 
             return True, logs
         return False, {}
@@ -74,20 +87,26 @@ class HLDQN:
         optimizer_state,
         batch_samples,
     ):
-        loss, grad_loss = jax.value_and_grad(self.loss_on_batch)(params, params_target, batch_samples)
+        (loss, extreme_bins_prob), grad_loss = jax.value_and_grad(self.loss_on_batch, has_aux=True)(
+            params, params_target, batch_samples
+        )
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
 
-        return params, optimizer_state, loss
+        return params, optimizer_state, loss, extreme_bins_prob
 
     def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
-        return jax.vmap(self.loss, in_axes=(None, None, 0))(params, params_target, samples).mean()
+        losses, extreme_bins_prob = jax.vmap(self.loss, in_axes=(None, None, 0))(params, params_target, samples)
+        return losses.mean(), extreme_bins_prob.mean(axis=0)
 
     def loss(self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement):
         # computes the loss for a single sample
         target = self.compute_target(params_target, sample)
         q_logits = self.network.apply_fn(params, sample.state)[sample.action]
-        return optax.softmax_cross_entropy(q_logits, self.project_target_on_support(target))
+        return (
+            optax.softmax_cross_entropy(q_logits, self.project_target_on_support(target)),
+            jax.nn.softmax(q_logits)[jnp.array([0, self.n_bins // 2, -1])],
+        )
 
     def compute_target(self, params: FrozenDict, sample: ReplayElement):
         # computes the target value for single sample
@@ -99,7 +118,7 @@ class HLDQN:
     def project_target_on_support(self, target: jax.Array) -> jax.Array:
         # We use the error function. It is linked with the cumulative distribution function of a gaussian distribution.
         cdf_evals = jax.scipy.special.erf((self.support - target) / (jnp.sqrt(2) * self.sigma))
-        return (cdf_evals[1:] - cdf_evals[:-1]) / (cdf_evals[-1] - cdf_evals[0])
+        return (cdf_evals[1:] - cdf_evals[:-1]) / (cdf_evals[-1] - cdf_evals[0] + 1e-6)
 
     @partial(jax.jit, static_argnames="self")
     def best_action(self, params: FrozenDict, state: jnp.ndarray, **kwargs):
