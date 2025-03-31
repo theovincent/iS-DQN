@@ -62,7 +62,7 @@ class TestHLDQN(unittest.TestCase):
         print(f"-------------- Random key {self.random_seed} --------------")
         sample = self.generator.sample(self.key)
 
-        computed_loss = self.q.loss(self.q.params, self.q.params, sample)
+        computed_loss = self.q.loss(self.q.params, self.q.params, sample)[0]
 
         target = self.q.compute_target(self.q.params, sample)
         prediction = self.q.network.apply_fn(self.q.params, sample.state)[sample.action]

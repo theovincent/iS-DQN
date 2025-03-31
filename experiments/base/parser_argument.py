@@ -222,3 +222,49 @@ def add_hldqn_arguments(parser: argparse.ArgumentParser):
         type=float,
         default=3,
     )
+
+
+@output_added_arguments
+def add_gidqn_arguments(parser: argparse.ArgumentParser):
+    parser.add_argument(
+        "-nn",
+        "--n_networks",
+        help="Number of online networks to trainin in parallel. (K)",
+        type=int,
+        default=3,
+    )
+    parser.add_argument(
+        "-tuf",
+        "--target_update_frequency",
+        help="Number of training steps before updating the target Q-networks. (T)",
+        type=int,
+        default=200,
+    )
+    parser.add_argument(
+        "-nb",
+        "--n_bins",
+        help="Number of bins composing the histogram.",
+        type=int,
+        default=50,
+    )
+    parser.add_argument(
+        "-minn",
+        "--min_value",
+        help="Value of the lowest learnable value of the target.",
+        type=float,
+        default=-100,
+    )
+    parser.add_argument(
+        "-maxn",
+        "--max_value",
+        help="Value of the highest learnable value of the target.",
+        type=float,
+        default=100,
+    )
+    parser.add_argument(
+        "-sigma",
+        "--sigma",
+        help="Standard deviation of each target sample. If \sigma / \eta = 0.75, then \sigma = 0.75 * (max_value - min_value) / n_bins",
+        type=float,
+        default=3,
+    )
