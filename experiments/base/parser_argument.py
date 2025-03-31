@@ -186,6 +186,24 @@ def add_idqn_arguments(parser: argparse.ArgumentParser):
 
 
 @output_added_arguments
+def add_fgidqn_arguments(parser: argparse.ArgumentParser):
+    parser.add_argument(
+        "-nn",
+        "--n_networks",
+        help="Number of online networks to trainin in parallel. (K)",
+        type=int,
+        default=3,
+    )
+    parser.add_argument(
+        "-tuf",
+        "--target_update_frequency",
+        help="Number of training steps before updating the target Q-networks. (T)",
+        type=int,
+        default=200,
+    )
+
+
+@output_added_arguments
 def add_hldqn_arguments(parser: argparse.ArgumentParser):
     parser.add_argument(
         "-tuf",
