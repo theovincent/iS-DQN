@@ -11,17 +11,17 @@ from slimdqn.sample_collection.replay_buffer import ReplayBuffer, ReplayElement
 
 
 @jax.jit
-def shift_params(params):
-    # Each online network is updated to the following online network
-    # \theta_k <- \theta_{k + 1}, i.e., params[k] <- params[k + 1]
-    return jax.tree.map(lambda param: param.at[:-1].set(param[1:]), params)
-
-
-@jax.jit
 def sync_target_params(params, target_params):
     # Each target network is synchronized to the online network it represents
     # \bar{\theta}_k <- \theta_k, i.e., target_params[k] <- params[k-1]
     return jax.tree.map(lambda param, target_param: target_param.at[1:].set(param[:-1]), params, target_params)
+
+
+@jax.jit
+def shift_params(params):
+    # Each online network is updated to the following online network
+    # \theta_k <- \theta_{k + 1}, i.e., params[k] <- params[k + 1]
+    return jax.tree.map(lambda param: param.at[:-1].set(param[1:]), params)
 
 
 class iDQN:
@@ -50,7 +50,7 @@ class iDQN:
         )
 
         self.optimizer = optax.adam(learning_rate, eps=adam_eps)
-        self.optimizer_state = jax.vmap(self.optimizer.init)(self.params)
+        self.optimizer_state = self.optimizer.init(self.params)
         # Create K target parameters
         # target_params = [\bar{\theta}_0, \bar{\theta}_1, ..., \bar{\theta}_{K-1}]
         self.target_params = self.params
@@ -94,7 +94,6 @@ class iDQN:
         return False, {}
 
     @partial(jax.jit, static_argnames="self")
-    @partial(jax.vmap, in_axes=(None, 0, 0, 0, None))  # vmap over the Q-networks
     def learn_on_batch(
         self,
         params: FrozenDict,
@@ -102,14 +101,18 @@ class iDQN:
         optimizer_state,
         batch_samples,
     ):
-        loss, grad_loss = jax.value_and_grad(self.loss_on_batch)(params, params_target, batch_samples)
+        grad_loss, losses = jax.grad(self.loss_on_batch, has_aux=True)(params, params_target, batch_samples)
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
 
-        return params, optimizer_state, loss
+        return params, optimizer_state, losses
 
     def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
-        return jax.vmap(self.loss, in_axes=(None, None, 0))(params, params_target, samples).mean()
+        # map over params, then map over samples
+        losses = jax.vmap(jax.vmap(self.loss, in_axes=(None, None, 0)), in_axes=(0, 0, None))(
+            params, params_target, samples
+        )
+        return losses.mean(), losses.mean(axis=1)
 
     def loss(self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement):
         # computes the loss for a single sample

@@ -6,7 +6,7 @@ import jax
 from experiments.base.dqn import train
 from experiments.base.utils import prepare_logs
 from slimdqn.environments.lunar_lander import LunarLander
-from slimdqn.networks.fgidqn import FGiDQN
+from slimdqn.networks.ihldqn import iHLDQN
 from slimdqn.sample_collection.replay_buffer import ReplayBuffer
 from slimdqn.sample_collection.samplers import UniformSamplingDistribution
 
@@ -27,11 +27,12 @@ def run(argvs=sys.argv[1:]):
         gamma=p["gamma"],
         compress=True,
     )
-    agent = FGiDQN(
+    agent = iHLDQN(
         q_key,
         env.observation_shape[0],
         env.n_actions,
         n_networks=p["n_networks"],
+        n_bins=p["n_bins"],
         features=p["features"],
         architecture_type=p["architecture_type"],
         learning_rate=p["learning_rate"],
@@ -39,6 +40,10 @@ def run(argvs=sys.argv[1:]):
         update_horizon=p["update_horizon"],
         update_to_data=p["update_to_data"],
         target_update_frequency=p["target_update_frequency"],
+        target_sync_frequency=p["target_sync_frequency"],
+        min_value=p["min_value"],
+        max_value=p["max_value"],
+        sigma=p["sigma"],
     )
     train(train_key, p, agent, env, rb)
 

@@ -7,7 +7,7 @@ from slimdqn.networks.idqn import iDQN
 from tests.utils import Generator
 
 
-class TestDQN(unittest.TestCase):
+class TestiDQN(unittest.TestCase):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.random_seed = np.random.randint(1000)
