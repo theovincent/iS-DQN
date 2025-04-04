@@ -84,7 +84,7 @@ class aGIHLDQN:
         if step % self.target_update_frequency == 0:
             # The target network is updated to the first online network
             # \bar{\theta}_0 <- \theta_{1}, i.e., target_params <- params[0]
-            self.target_params = self.params.copy()
+            self.target_params = extract_first_params(self.params)
             # Window shift
             self.params = shift_params(self.params)
 
