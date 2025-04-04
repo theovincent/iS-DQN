@@ -78,7 +78,7 @@ class aGIHLDQN:
                 self.params, self.target_params, self.optimizer_state, batch_samples
             )
             self.cumulated_losses += losses
-            self.cumulated_unsupported_prob += unsupported_probs
+            self.cumulated_unsupported_probs += unsupported_probs
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
