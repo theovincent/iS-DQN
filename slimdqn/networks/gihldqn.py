@@ -156,7 +156,7 @@ class GIHLDQN:
         variances = jax.vmap(jax.vmap(self.variance, in_axes=(None, 0)), in_axes=(0, None))(updated_params, samples)
 
         # Computing the gradient w.r.t params of losses will give Grad_k(||\hat{\Gamma} Q_k - Q_{k+1}||)
-        return (losses + variances).mean(), (
+        return (losses + variances).mean(axis=1).sum(axis=0), (
             grad_loss,
             losses.mean(axis=1),
             unsupported_probs.mean(axis=1),
@@ -169,7 +169,7 @@ class GIHLDQN:
             params, params_targets, samples
         )
 
-        return losses.mean(), (losses, unsupported_probs)
+        return losses.mean(axis=1).sum(axis=0), (losses, unsupported_probs)
 
     def loss(self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement) -> Tuple[jax.Array, jax.Array]:
         # computes the loss for a single sample

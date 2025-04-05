@@ -132,7 +132,7 @@ class iHLDQN:
         losses, unsupported_probs = jax.vmap(jax.vmap(self.loss, in_axes=(None, None, 0)), in_axes=(0, 0, None))(
             params, params_target, samples
         )
-        return losses.mean(), (losses.mean(axis=1), unsupported_probs.mean(axis=1))
+        return losses.mean(axis=1).sum(axis=0), (losses.mean(axis=1), unsupported_probs.mean(axis=1))
 
     def loss(self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement) -> Tuple[jax.Array, jax.Array]:
         # computes the loss for a single sample
