@@ -19,10 +19,13 @@ SHARED_ARGS="$SHARED_ARGS --features $FEATURE $FEATURE --target_update_frequency
 # launch_job/lunar_lander/cluster_agidqn.sh --first_seed 4 --last_seed 4 --n_parallel_seeds 1 $SHARED_ARGS $aGIDQN_ARGS
 
 # HLDQN_ARGS="--n_bins 50 --min_value -100 --max_value 100 --sigma 3"
-# launch_job/lunar_lander/local_hldqn.sh --first_seed 1 --last_seed 1 --n_parallel_seeds 1 $SHARED_ARGS $HLDQN_ARGS
+# launch_job/lunar_lander/cluster_hldqn.sh --first_seed 1 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $HLDQN_ARGS
 
 # iHLDQN_ARGS="--n_networks $N_NETWORS --target_sync_frequency $TARGET_SYNC_FREQ --n_bins 50 --min_value -100 --max_value 100 --sigma 3"
 # launch_job/lunar_lander/cluster_ihldqn.sh --first_seed 1 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $iHLDQN_ARGS
 
 # aGIHLDQN_ARGS="--n_networks $N_NETWORS --n_bins 50 --min_value -100 --max_value 100 --sigma 3"
 # launch_job/lunar_lander/cluster_agihldqn.sh --first_seed 1 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $aGIHLDQN_ARGS
+
+# GIHLDQN_ARGS="--n_networks $N_NETWORS --n_bins 50 --min_value -100 --max_value 100 --sigma 3"
+# launch_job/lunar_lander/cluster_gihldqn.sh --first_seed 1 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $GIHLDQN_ARGS
