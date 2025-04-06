@@ -2,31 +2,28 @@ import unittest
 import numpy as np
 import jax
 import jax.numpy as jnp
-import optax
 
-from slimdqn.networks.gihldqn import GIHLDQN
+from slimdqn.networks.gidqn import GIDQN
 from tests.utils import Generator
 
 
-class TestGIHLDQN(unittest.TestCase):
+class TestGIDQN(unittest.TestCase):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.random_seed = np.random.randint(1000)
         self.key = jax.random.PRNGKey(self.random_seed)
 
-        key_actions, key_n_networks, key_bins, key_feature_1, key_feature_2, key_feature_3, key_feature_4 = (
-            jax.random.split(self.key, 7)
+        key_actions, key_n_networks, key_feature_1, key_feature_2, key_feature_3, key_feature_4 = jax.random.split(
+            self.key, 6
         )
         self.observation_dim = (84, 84, 4)
         self.n_actions = int(jax.random.randint(key_actions, (), minval=2, maxval=10))
         self.n_networks = int(jax.random.randint(key_n_networks, (), 1, 10))
-        self.n_bins = int(jax.random.randint(key_bins, (), minval=1, maxval=10))
-        self.q = GIHLDQN(
+        self.q = GIDQN(
             self.key,
             self.observation_dim,
             self.n_actions,
             self.n_networks,
-            self.n_bins,
             [
                 jax.random.randint(key_feature_1, (), minval=1, maxval=10),
                 jax.random.randint(key_feature_2, (), minval=1, maxval=10),
@@ -39,9 +36,6 @@ class TestGIHLDQN(unittest.TestCase):
             1,
             1,
             1,
-            -10,
-            10,
-            0.3,
         )
 
         self.generator = Generator(None, self.observation_dim, self.n_actions)
@@ -53,14 +47,12 @@ class TestGIHLDQN(unittest.TestCase):
 
         computed_target = self.q.compute_target(jax.tree.map(lambda param: param[idx_params], self.q.params), sample)
 
-        next_q_values = self.q.network.apply_fn(
+        next_q_values = self.q.network.apply(
             jax.tree.map(lambda param: param[idx_params], self.q.params), sample.next_state
         )
-        target = sample.reward + (1 - sample.is_terminal) * self.q.gamma * jnp.max(
-            jax.nn.softmax(next_q_values) @ self.q.bin_centers
-        )
+        target = sample.reward + (1 - sample.is_terminal) * self.q.gamma * jnp.max(next_q_values)
 
-        self.assertEqual(next_q_values.shape, (self.n_actions, self.n_bins))
+        self.assertEqual(next_q_values.shape, (self.n_actions,))
         self.assertEqual(target, computed_target)
 
     def test_loss(self) -> None:
@@ -72,11 +64,11 @@ class TestGIHLDQN(unittest.TestCase):
         computed_loss = self.q.loss(params, params, sample)[0]
 
         target = self.q.compute_target(params, sample)
-        prediction = self.q.network.apply_fn(params, sample.state)[sample.action]
-        kl_loss = optax.softmax_cross_entropy(prediction, self.q.project_target_on_support(target)[0])
-        variance_loss = target**2 - 2 * target * (jax.nn.softmax(prediction) @ self.q.bin_centers)
+        prediction = self.q.network.apply(params, sample.state)[sample.action]
+        l2_loss = np.square(target - prediction)
+        variance_loss = target**2 - 2 * target * prediction
 
-        self.assertEqual(kl_loss + variance_loss, computed_loss)
+        self.assertEqual(l2_loss + variance_loss, computed_loss)
 
     def test_best_action(self):
         print(f"-------------- Random key {self.random_seed} --------------")
@@ -85,8 +77,8 @@ class TestGIHLDQN(unittest.TestCase):
         computed_best_action = self.q.best_action(self.q.params, state, self.key)
 
         idx_params = jax.random.randint(self.key, (), 0, self.n_networks)
-        q_logits = self.q.network.apply_fn(jax.tree.map(lambda param: param[idx_params], self.q.params), state)
-        best_action = jnp.argmax(jax.nn.softmax(q_logits) @ self.q.bin_centers)
+        q_values = self.q.network.apply(jax.tree.map(lambda param: param[idx_params], self.q.params), state)
+        best_action = jnp.argmax(q_values)
 
-        self.assertEqual(q_logits.shape, (self.n_actions, self.n_bins))
+        self.assertEqual(q_values.shape, (self.n_actions,))
         self.assertEqual(best_action, computed_best_action)

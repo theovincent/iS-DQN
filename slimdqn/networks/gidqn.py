@@ -1,4 +1,3 @@
-from typing import Tuple
 from functools import partial
 
 import jax
@@ -23,14 +22,13 @@ def shift_params(params):
     return jax.tree.map(lambda param: param.at[:-1].set(param[1:]), params)
 
 
-class GIHLDQN:
+class GIDQN:
     def __init__(
         self,
-        key: jax.random.PRNGKey,
+        key: jax.Array,
         observation_dim,
         n_actions,
         n_networks: int,
-        n_bins: int,
         features: list,
         architecture_type: str,
         learning_rate: float,
@@ -38,17 +36,10 @@ class GIHLDQN:
         update_horizon: int,
         update_to_data: int,
         target_update_frequency: int,
-        min_value: float,
-        max_value: float,
-        sigma: float,
         adam_eps: float = 1e-8,
     ):
         self.n_networks = n_networks
-        self.n_bins = n_bins
-        self.network = DQNNet(features, architecture_type, n_actions * self.n_bins)
-        self.network.apply_fn = lambda params, state: self.network.apply(params, state).reshape(
-            (n_actions, self.n_bins)
-        )
+        self.network = DQNNet(features, architecture_type, n_actions)
         # Create K online parameters
         # params = [\theta_1, \theta_2, ..., \theta_K]
         self.params = jax.vmap(self.network.init, in_axes=(0, None))(
@@ -65,21 +56,16 @@ class GIHLDQN:
         self.update_to_data = update_to_data
         self.target_update_frequency = target_update_frequency
         self.cumulated_losses = np.zeros(self.n_networks)
-        self.cumulated_unsupported_probs = np.zeros(self.n_networks)
         self.cumulated_variances = np.zeros(self.n_networks)
-        self.support = jnp.linspace(min_value, max_value, self.n_bins + 1, dtype=jnp.float32)
-        self.bin_centers = (self.support[:-1] + self.support[1:]) / 2
-        self.sigma = sigma
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
         if step % self.update_to_data == 0:
             batch_samples = replay_buffer.sample()
 
-            self.params, self.optimizer_state, losses, unsupported_probs, variances = self.learn_on_batch(
+            self.params, self.optimizer_state, losses, variances = self.learn_on_batch(
                 self.params, self.target_params, self.optimizer_state, batch_samples
             )
             self.cumulated_losses += losses
-            self.cumulated_unsupported_probs += unsupported_probs
             self.cumulated_variances += variances
 
     def update_target_params(self, step: int):
@@ -90,19 +76,15 @@ class GIHLDQN:
             # Window shift
             self.params = shift_params(self.params)
 
-            logs = {"loss": self.cumulated_losses.mean() / (self.target_update_frequency / self.update_to_data)}
+            logs = {"loss": np.mean(self.cumulated_losses) / (self.target_update_frequency / self.update_to_data)}
             for idx_network in range(self.n_networks):
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
-                    self.target_update_frequency / self.update_to_data
-                )
-                logs[f"networks/{idx_network}_unsupported_prob"] = self.cumulated_unsupported_probs[idx_network] / (
                     self.target_update_frequency / self.update_to_data
                 )
                 logs[f"networks/{idx_network}_variances"] = self.cumulated_variances[idx_network] / (
                     self.target_update_frequency / self.update_to_data
                 )
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
-            self.cumulated_unsupported_probs = np.zeros_like(self.cumulated_unsupported_probs)
             self.cumulated_variances = np.zeros_like(self.cumulated_variances)
 
             return True, logs
@@ -117,13 +99,13 @@ class GIHLDQN:
         optimizer_state,
         batch_samples,
     ):
-        grad_loss, (losses, unsupported_probs, variances) = jax.grad(self.loss_on_batch, has_aux=True)(
+        grad_loss, (losses, variances) = jax.grad(self.loss_on_batch, has_aux=True)(
             params, params_target, batch_samples
         )
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
 
-        return params, optimizer_state, losses, unsupported_probs, variances
+        return params, optimizer_state, losses, variances
 
     def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
         # Create a list of target params [\bar{\theta}_0, \theta_1, ..., \theta_{K-1}]
@@ -133,62 +115,35 @@ class GIHLDQN:
         )
 
         # map over params, then map over samples
-        losses, kl_losses, unsupported_probs, variances = jax.vmap(
-            jax.vmap(self.loss, in_axes=(None, None, 0)), in_axes=(0, 0, None)
-        )(params, params_targets, samples)
-        return losses.mean(axis=1).sum(axis=0), (
-            kl_losses.mean(axis=1),
-            unsupported_probs.mean(axis=1),
-            variances.mean(axis=1),
+        losses, l2_losses, variances = jax.vmap(jax.vmap(self.loss, in_axes=(None, None, 0)), in_axes=(0, 0, None))(
+            params, params_targets, samples
         )
+        return losses.mean(axis=1).sum(axis=0), (l2_losses.mean(axis=1), variances.mean(axis=1))
 
-    def loss(
-        self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement
-    ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    def loss(self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement):
         # computes the loss for a single sample
         target = self.compute_target(params_target, sample)
-        q_logits = self.network.apply_fn(params, sample.state)[sample.action]
-        projected_target, unsupported_prob = self.project_target_on_support(target)
+        q_value = self.network.apply(params, sample.state)[sample.action]
 
-        kl_loss = optax.softmax_cross_entropy(q_logits, projected_target)
-        # \hat{V}[target_k] = target_k^2 - target_k * E[Q_{k+1}]
-        # However, \grad_k \hat{V}[target_k] = 2 * target_k * \grad_k target_k - 2 * \grad_k target_k * E[Q_{k+1}]
-        # Therefore, we compute \hat{V}[target_k] as target_k^2 - 2 * target_k * E[Q_{k+1}]
-        expected_q = jax.nn.softmax(q_logits) @ self.bin_centers
-        variance_loss = target**2 - 2 * target * jax.lax.stop_gradient(expected_q)
-        return (
-            kl_loss + variance_loss,
-            kl_loss,
-            unsupported_prob,
-            target**2 - target * expected_q,
-        )
+        l2_loss = jnp.square(q_value - target)
+        # \hat{V}[target_k] = target_k^2 - target_k * Q_{k+1}
+        # However, \grad_k \hat{V}[target_k] = 2 * target_k * \grad_k target_k - 2 * \grad_k target_k * Q_{k+1}
+        # Therefore, we compute \hat{V}[target_k] as target_k^2 - 2 * target_k * Q_{k+1}
+        variance_loss = target**2 - 2 * target * jax.lax.stop_gradient(q_value)
+        return l2_loss + variance_loss, l2_loss, target**2 - target * q_value
 
     def compute_target(self, params: FrozenDict, sample: ReplayElement):
         # computes the target value for single sample
-        # We first compute the probabilities by applying the softmax on the last axis (bin axis).
-        # Then, we compute the expectation by multiplying with the bin centers.
-        next_values = jax.nn.softmax(self.network.apply_fn(params, sample.next_state)) @ self.bin_centers
-        return sample.reward + (1 - sample.is_terminal) * (self.gamma**self.update_horizon) * jnp.max(next_values)
-
-    def project_target_on_support(self, target: jax.Array) -> jax.Array:
-        # We use the error function. It is linked with the cumulative distribution function of a gaussian distribution.
-        erf_support = jax.scipy.special.erf((self.support - target) / (jnp.sqrt(2) * self.sigma))
-        # We also output the probability mass which does not lie on the support
-        # CDF(min support) + 1 - CDF(max support)
-        return (
-            (erf_support[1:] - erf_support[:-1]) / (erf_support[-1] - erf_support[0] + 1e-6),
-            erf_support[0] / 2 + 1 - erf_support[-1] / 2,
+        return sample.reward + (1 - sample.is_terminal) * (self.gamma**self.update_horizon) * jnp.max(
+            self.network.apply(params, sample.next_state)
         )
 
     @partial(jax.jit, static_argnames="self")
     def best_action(self, params: FrozenDict, state: jnp.ndarray, key: jax.Array):
         idx_params = jax.random.randint(key, (), 0, self.n_networks)
-        selected_params = jax.tree.map(lambda param: param[idx_params], params)
 
         # computes the best action for a single state
-        # We first compute the probabilities by applying the softmax on the last axis (bin axis).
-        # Then, we compute the expectation by multiplying with the bin centers.
-        return jnp.argmax(jax.nn.softmax(self.network.apply_fn(selected_params, state)) @ self.bin_centers)
+        return jnp.argmax(self.network.apply(jax.tree.map(lambda param: param[idx_params], params), state))
 
     def get_model(self):
         return {"params": self.params}

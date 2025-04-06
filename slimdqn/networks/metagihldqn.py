@@ -23,7 +23,7 @@ def shift_params(params):
     return jax.tree.map(lambda param: param.at[:-1].set(param[1:]), params)
 
 
-class GIHLDQN:
+class MetaGIHLDQN:
     def __init__(
         self,
         key: jax.random.PRNGKey,
@@ -55,7 +55,8 @@ class GIHLDQN:
             jax.random.split(key, self.n_networks), jnp.zeros(observation_dim, dtype=jnp.float32)
         )
 
-        self.optimizer = optax.adam(learning_rate, eps=adam_eps)
+        # eps_root=1e-9 so that the gradient over adam does not output nans
+        self.optimizer = optax.adam(learning_rate, eps=adam_eps, eps_root=1e-9)
         self.optimizer_state = self.optimizer.init(self.params)
         # Create 1 target parameter \bar{\theta}_0
         self.target_params = extract_first_params(self.params)
@@ -117,51 +118,66 @@ class GIHLDQN:
         optimizer_state,
         batch_samples,
     ):
-        grad_loss, (losses, unsupported_probs, variances) = jax.grad(self.loss_on_batch, has_aux=True)(
-            params, params_target, batch_samples
+        # The gradient of each params is composed of 3 terms:
+        # Grad_k(||\hat{\Gamma} Q_{k-1} - Q_k||)  # will be given as auxiliary of jax.grad (grad_online_loss)
+        # + Grad_k(||\hat{\Gamma} Q_k - Q_{k+1}||) # will be computed by jax.grad (grad_target_variance_loss)
+        # + Grad_k(Var(Q_{\theta_{k+1} - lr Grad_{k+1}(||\hat{\Gamma} Q_k - Q_{k+1}||)))
+        # will be computed by jax.grad (grad_target_variance_loss)
+        grad_target_variance_loss, (grad_online_loss, losses, unsupported_probs, variances) = jax.grad(
+            self.loss_on_batch, has_aux=True
+        )(params, params_target, batch_samples, optimizer_state)
+        updates, optimizer_state = self.optimizer.update(
+            jax.tree.map(jnp.add, grad_target_variance_loss, grad_online_loss), optimizer_state
         )
-        updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
 
         return params, optimizer_state, losses, unsupported_probs, variances
 
-    def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
+    def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples: ReplayElement, optimizer_state):
         # Create a list of target params [\bar{\theta}_0, \theta_1, ..., \theta_{K-1}]
         # [target_params, params_0, ..., params_[K - 1]]
         params_targets = jax.tree.map(
             lambda param, target_param: jnp.vstack([target_param[jnp.newaxis], param[:-1]]), params, params_target
         )
 
-        # map over params, then map over samples
-        losses, kl_losses, unsupported_probs, variances = jax.vmap(
-            jax.vmap(self.loss, in_axes=(None, None, 0)), in_axes=(0, 0, None)
-        )(params, params_targets, samples)
-        return losses.mean(axis=1).sum(axis=0), (
-            kl_losses.mean(axis=1),
+        # Stop gradient of the params as loss_on_batch only computes the gradient w.r.t the networks used to compute the targets
+        # i.e. the following terms
+        # Grad_k(||\hat{\Gamma} Q_k - Q_{k+1}||) + Grad_k(Var(Q_{\theta_{k+1} - lr Grad_{k+1}(||\hat{\Gamma} Q_k - Q_{k+1}||)))
+        params = jax.lax.stop_gradient(params)
+
+        # Compute the semi-gradient w.r.t the online networks and update the parameters but not the optimizer state
+        # i.e. the following term Grad_k(||\hat{\Gamma} Q_{k-1} - Q_k||)
+        grad_loss, (losses, unsupported_probs) = jax.grad(self.vmap_loss, has_aux=True)(params, params_targets, samples)
+        updates, _ = self.optimizer.update(grad_loss, optimizer_state)
+        updated_params = optax.apply_updates(params, updates)
+
+        # Compute the variance of the online networks, i.e., Var(Q_{\theta_{k+1} - lr Grad_{k+1}(||\hat{\Gamma} Q_k - Q_{k+1}||)
+        # map over params, then map over states
+        variances = jax.vmap(jax.vmap(self.variance, in_axes=(None, 0)), in_axes=(0, None))(updated_params, samples)
+
+        # Computing the gradient w.r.t params of losses will give Grad_k(||\hat{\Gamma} Q_k - Q_{k+1}||)
+        # return (losses + variances).mean(axis=1).sum(axis=0), (
+        return (losses).mean(axis=1).sum(axis=0), (
+            grad_loss,
+            losses.mean(axis=1),
             unsupported_probs.mean(axis=1),
             variances.mean(axis=1),
         )
 
-    def loss(
-        self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement
-    ) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    def vmap_loss(self, params: FrozenDict, params_targets: FrozenDict, samples):
+        # map over params, then map over samples
+        losses, unsupported_probs = jax.vmap(jax.vmap(self.loss, in_axes=(None, None, 0)), in_axes=(0, 0, None))(
+            params, params_targets, samples
+        )
+
+        return losses.mean(axis=1).sum(axis=0), (losses, unsupported_probs)
+
+    def loss(self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement) -> Tuple[jax.Array, jax.Array]:
         # computes the loss for a single sample
         target = self.compute_target(params_target, sample)
         q_logits = self.network.apply_fn(params, sample.state)[sample.action]
         projected_target, unsupported_prob = self.project_target_on_support(target)
-
-        kl_loss = optax.softmax_cross_entropy(q_logits, projected_target)
-        # \hat{V}[target_k] = target_k^2 - target_k * E[Q_{k+1}]
-        # However, \grad_k \hat{V}[target_k] = 2 * target_k * \grad_k target_k - 2 * \grad_k target_k * E[Q_{k+1}]
-        # Therefore, we compute \hat{V}[target_k] as target_k^2 - 2 * target_k * E[Q_{k+1}]
-        expected_q = jax.nn.softmax(q_logits) @ self.bin_centers
-        variance_loss = target**2 - 2 * target * jax.lax.stop_gradient(expected_q)
-        return (
-            kl_loss + variance_loss,
-            kl_loss,
-            unsupported_prob,
-            target**2 - target * expected_q,
-        )
+        return optax.softmax_cross_entropy(q_logits, projected_target), unsupported_prob
 
     def compute_target(self, params: FrozenDict, sample: ReplayElement):
         # computes the target value for single sample
@@ -179,6 +195,12 @@ class GIHLDQN:
             (erf_support[1:] - erf_support[:-1]) / (erf_support[-1] - erf_support[0] + 1e-6),
             erf_support[0] / 2 + 1 - erf_support[-1] / 2,
         )
+
+    def variance(self, params: FrozenDict, sample: ReplayElement):
+        q_probs = jax.nn.softmax(self.network.apply_fn(params, sample.state)[sample.action])
+
+        # V[Q] = E[Q^2] - E[Q]^2
+        return q_probs @ self.bin_centers**2 - (q_probs @ self.bin_centers) ** 2
 
     @partial(jax.jit, static_argnames="self")
     def best_action(self, params: FrozenDict, state: jnp.ndarray, key: jax.Array):

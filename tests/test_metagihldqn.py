@@ -4,11 +4,11 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from slimdqn.networks.gihldqn import GIHLDQN
+from slimdqn.networks.metagihldqn import MetaGIHLDQN
 from tests.utils import Generator
 
 
-class TestGIHLDQN(unittest.TestCase):
+class TestMetaGIHLDQN(unittest.TestCase):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.random_seed = np.random.randint(1000)
@@ -21,7 +21,7 @@ class TestGIHLDQN(unittest.TestCase):
         self.n_actions = int(jax.random.randint(key_actions, (), minval=2, maxval=10))
         self.n_networks = int(jax.random.randint(key_n_networks, (), 1, 10))
         self.n_bins = int(jax.random.randint(key_bins, (), minval=1, maxval=10))
-        self.q = GIHLDQN(
+        self.q = MetaGIHLDQN(
             self.key,
             self.observation_dim,
             self.n_actions,
@@ -73,10 +73,9 @@ class TestGIHLDQN(unittest.TestCase):
 
         target = self.q.compute_target(params, sample)
         prediction = self.q.network.apply_fn(params, sample.state)[sample.action]
-        kl_loss = optax.softmax_cross_entropy(prediction, self.q.project_target_on_support(target)[0])
-        variance_loss = target**2 - 2 * target * (jax.nn.softmax(prediction) @ self.q.bin_centers)
+        loss = optax.softmax_cross_entropy(prediction, self.q.project_target_on_support(target)[0])
 
-        self.assertEqual(kl_loss + variance_loss, computed_loss)
+        self.assertEqual(loss, computed_loss)
 
     def test_best_action(self):
         print(f"-------------- Random key {self.random_seed} --------------")
