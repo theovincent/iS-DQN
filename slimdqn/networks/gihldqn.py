@@ -66,7 +66,7 @@ class GIHLDQN:
         self.target_update_frequency = target_update_frequency
         self.cumulated_losses = np.zeros(self.n_networks)
         self.cumulated_unsupported_probs = np.zeros(self.n_networks)
-        self.cumulated_variances = np.zeros(self.n_networks)
+        self.cumulated_entropies = np.zeros(self.n_networks)
         self.support = jnp.linspace(min_value, max_value, self.n_bins + 1, dtype=jnp.float32)
         self.bin_centers = (self.support[:-1] + self.support[1:]) / 2
         self.sigma = sigma
@@ -75,12 +75,12 @@ class GIHLDQN:
         if step % self.update_to_data == 0:
             batch_samples = replay_buffer.sample()
 
-            self.params, self.optimizer_state, losses, unsupported_probs, variances = self.learn_on_batch(
+            self.params, self.optimizer_state, losses, unsupported_probs, entropies = self.learn_on_batch(
                 self.params, self.target_params, self.optimizer_state, batch_samples
             )
             self.cumulated_losses += losses
             self.cumulated_unsupported_probs += unsupported_probs
-            self.cumulated_variances += variances
+            self.cumulated_entropies += entropies
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
@@ -98,12 +98,12 @@ class GIHLDQN:
                 logs[f"networks/{idx_network}_unsupported_prob"] = self.cumulated_unsupported_probs[idx_network] / (
                     self.target_update_frequency / self.update_to_data
                 )
-                logs[f"networks/{idx_network}_variances"] = self.cumulated_variances[idx_network] / (
+                logs[f"networks/{idx_network}_entropy"] = self.cumulated_entropies[idx_network] / (
                     self.target_update_frequency / self.update_to_data
                 )
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
             self.cumulated_unsupported_probs = np.zeros_like(self.cumulated_unsupported_probs)
-            self.cumulated_variances = np.zeros_like(self.cumulated_variances)
+            self.cumulated_entropies = np.zeros_like(self.cumulated_entropies)
 
             return True, logs
 
@@ -117,13 +117,13 @@ class GIHLDQN:
         optimizer_state,
         batch_samples,
     ):
-        grad_loss, (losses, unsupported_probs, variances) = jax.grad(self.loss_on_batch, has_aux=True)(
+        grad_loss, (losses, unsupported_probs, entropies) = jax.grad(self.loss_on_batch, has_aux=True)(
             params, params_target, batch_samples
         )
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
 
-        return params, optimizer_state, losses, unsupported_probs, variances
+        return params, optimizer_state, losses, unsupported_probs, entropies
 
     def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
         # Create a list of target params [\bar{\theta}_0, \theta_1, ..., \theta_{K-1}]
@@ -133,13 +133,13 @@ class GIHLDQN:
         )
 
         # map over params, then map over samples
-        losses, kl_losses, unsupported_probs, variances = jax.vmap(
+        losses, cross_entropies, unsupported_probs, entropies = jax.vmap(
             jax.vmap(self.loss, in_axes=(None, None, 0)), in_axes=(0, 0, None)
         )(params, params_targets, samples)
         return losses.mean(axis=1).sum(axis=0), (
-            kl_losses.mean(axis=1),
+            cross_entropies.mean(axis=1),
             unsupported_probs.mean(axis=1),
-            variances.mean(axis=1),
+            entropies.mean(axis=1),
         )
 
     def loss(
@@ -150,17 +150,15 @@ class GIHLDQN:
         q_logits = self.network.apply_fn(params, sample.state)[sample.action]
         projected_target, unsupported_prob = self.project_target_on_support(target)
 
-        kl_loss = optax.softmax_cross_entropy(q_logits, projected_target)
-        # \hat{V}[target_k] = target_k^2 - target_k * E[Q_{k+1}]
-        # However, \grad_k \hat{V}[target_k] = 2 * target_k * \grad_k target_k - 2 * \grad_k target_k * E[Q_{k+1}]
-        # Therefore, we compute \hat{V}[target_k] as target_k^2 - 2 * target_k * E[Q_{k+1}]
-        expected_q = jax.nn.softmax(q_logits) @ self.bin_centers
-        variance_loss = target**2 - 2 * target * jax.lax.stop_gradient(expected_q)
+        cross_entropy = optax.softmax_cross_entropy(q_logits, projected_target)
+        # Stop gradient because the gradient w.r.t the target parameters is nul for the term in the log.
+        log_probs = jnp.log(jax.lax.stop_gradient(projected_target))
+        entropy = -jnp.sum(projected_target * log_probs)
         return (
-            kl_loss + variance_loss,
-            kl_loss,
+            cross_entropy - entropy,
+            cross_entropy,
             unsupported_prob,
-            target**2 - target * expected_q,
+            entropy,
         )
 
     def compute_target(self, params: FrozenDict, sample: ReplayElement):

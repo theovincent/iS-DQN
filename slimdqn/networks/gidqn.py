@@ -130,7 +130,7 @@ class GIDQN:
         # However, \grad_k \hat{V}[target_k] = 2 * target_k * \grad_k target_k - 2 * \grad_k target_k * Q_{k+1}
         # Therefore, we compute \hat{V}[target_k] as target_k^2 - 2 * target_k * Q_{k+1}
         variance_loss = target**2 - 2 * target * jax.lax.stop_gradient(q_value)
-        return l2_loss + variance_loss, l2_loss, target**2 - target * q_value
+        return l2_loss - variance_loss, l2_loss, target**2 - target * q_value
 
     def compute_target(self, params: FrozenDict, sample: ReplayElement):
         # computes the target value for single sample
