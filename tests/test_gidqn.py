@@ -68,7 +68,7 @@ class TestGIDQN(unittest.TestCase):
         l2_loss = np.square(target - prediction)
         variance_loss = target**2 - 2 * target * prediction
 
-        self.assertEqual(l2_loss + variance_loss, computed_loss)
+        self.assertEqual(l2_loss - variance_loss, computed_loss)
 
     def test_best_action(self):
         print(f"-------------- Random key {self.random_seed} --------------")

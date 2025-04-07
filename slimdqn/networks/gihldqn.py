@@ -152,7 +152,7 @@ class GIHLDQN:
 
         cross_entropy = optax.softmax_cross_entropy(q_logits, projected_target)
         # Stop gradient because the gradient w.r.t the target parameters is nul for the term in the log.
-        log_probs = jnp.log(jax.lax.stop_gradient(projected_target))
+        log_probs = jnp.log(jax.lax.stop_gradient(projected_target) + 1e-9)
         entropy = -jnp.sum(projected_target * log_probs)
         return (
             cross_entropy - entropy,

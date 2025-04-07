@@ -73,10 +73,11 @@ class TestGIHLDQN(unittest.TestCase):
 
         target = self.q.compute_target(params, sample)
         prediction = self.q.network.apply_fn(params, sample.state)[sample.action]
-        kl_loss = optax.softmax_cross_entropy(prediction, self.q.project_target_on_support(target)[0])
-        variance_loss = target**2 - 2 * target * (jax.nn.softmax(prediction) @ self.q.bin_centers)
+        projected_target = self.q.project_target_on_support(target)[0]
+        cross_entropy = optax.softmax_cross_entropy(prediction, projected_target)
+        entropy = -jnp.sum(projected_target * jnp.log(projected_target + 1e-9))
 
-        self.assertEqual(kl_loss + variance_loss, computed_loss)
+        self.assertEqual(cross_entropy - entropy, computed_loss)
 
     def test_best_action(self):
         print(f"-------------- Random key {self.random_seed} --------------")
