@@ -11,16 +11,16 @@ SHARED_ARGS="$SHARED_ARGS --features $FEATURE $FEATURE --target_update_frequency
     --experiment_name f${FEATURE}_target_freq${TARGET_UPDATE_FREQ}_n_net${N_NETWORS}_sync_freq${TARGET_SYNC_FREQ}"
 
 # ----- L2 Loss -----
-# launch_job/lunar_lander/cluster_dqn.sh --first_seed 1 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS
+launch_job/lunar_lander/cluster_dqn.sh --first_seed 1 --last_seed 10 --n_parallel_seeds 1 $SHARED_ARGS
 
-# iDQN_ARGS="--n_networks $N_NETWORS --target_sync_frequency $TARGET_SYNC_FREQ"
-# launch_job/lunar_lander/cluster_idqn.sh --first_seed 4 --last_seed 4 --n_parallel_seeds 1 $SHARED_ARGS $iDQN_ARGS
+iDQN_ARGS="--n_networks $N_NETWORS --target_sync_frequency $TARGET_SYNC_FREQ"
+launch_job/lunar_lander/cluster_idqn.sh --first_seed 1 --last_seed 10 --n_parallel_seeds 1 $SHARED_ARGS $iDQN_ARGS
 
-# aGIDQN_ARGS="--n_networks $N_NETWORS"
-# launch_job/lunar_lander/cluster_agidqn.sh --first_seed 4 --last_seed 4 --n_parallel_seeds 1 $SHARED_ARGS $aGIDQN_ARGS
+aGIDQN_ARGS="--n_networks $N_NETWORS"
+launch_job/lunar_lander/cluster_agidqn.sh --first_seed 1 --last_seed 10 --n_parallel_seeds 1 $SHARED_ARGS $aGIDQN_ARGS
 
-# GIDQN_ARGS="--n_networks $N_NETWORS"
-# launch_job/lunar_lander/cluster_gidqn.sh --first_seed 1 --last_seed 20 --n_parallel_seeds 1 $SHARED_ARGS $GIDQN_ARGS
+GIDQN_ARGS="--n_networks $N_NETWORS"
+launch_job/lunar_lander/cluster_gidqn.sh --first_seed 1 --last_seed 10 --n_parallel_seeds 1 $SHARED_ARGS $GIDQN_ARGS
 
 # ----- KL Loss -----
 # HLDQN_ARGS="--n_bins 50 --min_value -100 --max_value 100 --sigma 3"
@@ -33,4 +33,4 @@ SHARED_ARGS="$SHARED_ARGS --features $FEATURE $FEATURE --target_update_frequency
 # launch_job/lunar_lander/cluster_agihldqn.sh --first_seed 1 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $aGIHLDQN_ARGS
 
 # GIHLDQN_ARGS="--n_networks $N_NETWORS --n_bins 50 --min_value -100 --max_value 100 --sigma 3"
-# launch_job/lunar_lander/cluster_gihldqn.sh --first_seed 11 --last_seed 20 --n_parallel_seeds 1 $SHARED_ARGS $GIHLDQN_ARGS
+# launch_job/lunar_lander/cluster_gihldqn.sh --first_seed 1 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $GIHLDQN_ARGS
