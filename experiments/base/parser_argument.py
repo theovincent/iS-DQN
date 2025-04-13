@@ -260,10 +260,3 @@ def add_gihldqn_arguments(parser: argparse.ArgumentParser):
     add_n_networks(parser)
     add_target_update_frequency(parser)
     add_histogram_loss_parameters(parser)
-
-
-@output_added_arguments
-def add_metagihldqn_arguments(parser: argparse.ArgumentParser):
-    add_n_networks(parser)
-    add_target_update_frequency(parser)
-    add_histogram_loss_parameters(parser)
