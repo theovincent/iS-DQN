@@ -23,13 +23,12 @@ def collect_single_sample(key, env, agent, rb: ReplayBuffer, p, epsilon_schedule
     obs = env.observation
     reward, absorbing = env.step(action)
 
-    altered_reward = reward + jax.random.uniform(key, (), minval=-0.1, maxval=0.1).item()
     episode_end = absorbing or env.n_steps >= p["horizon"]
     rb.add(
         TransitionElement(
             observation=obs,
             action=action,
-            reward=altered_reward if rb._clipping is None else rb._clipping(altered_reward),
+            reward=reward if rb._clipping is None else rb._clipping(reward),
             is_terminal=absorbing,
             episode_end=episode_end,
         )
