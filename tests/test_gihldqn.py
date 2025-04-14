@@ -75,7 +75,7 @@ class TestGIHLDQN(unittest.TestCase):
         prediction = self.q.network.apply_fn(params, sample.state)[sample.action]
         projected_target = self.q.project_target_on_support(target)[0]
         cross_entropy = optax.softmax_cross_entropy(prediction, projected_target)
-        entropy = -jnp.sum(projected_target * jnp.log(projected_target + 1e-9))
+        entropy = -jnp.sum(projected_target * jnp.log(jnp.maximum(projected_target, 1e-5)))
 
         self.assertEqual(cross_entropy - entropy, computed_loss)
 
