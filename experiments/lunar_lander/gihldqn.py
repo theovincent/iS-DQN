@@ -17,7 +17,7 @@ def run(argvs=sys.argv[1:]):
 
     q_key, train_key = jax.random.split(jax.random.PRNGKey(p["seed"]))
 
-    env = LunarLander(p["repeat_action_probability"])
+    env = LunarLander()
     rb = ReplayBuffer(
         sampling_distribution=UniformSamplingDistribution(p["seed"]),
         batch_size=p["batch_size"],
