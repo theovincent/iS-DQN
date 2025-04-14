@@ -84,6 +84,13 @@ def add_base_arguments(parser: argparse.ArgumentParser):
         default=0.99,
     )
     parser.add_argument(
+        "-rap",
+        "--repeat_action_probability",
+        help="Probability of an action to be repeated.",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
         "-lr",
         "--learning_rate",
         help="Learning rate.",

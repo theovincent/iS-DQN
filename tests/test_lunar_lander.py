@@ -32,6 +32,8 @@ class TestLunarLander(unittest.TestCase):
                 "1",
                 "--gamma",
                 "0.99",
+                "--repeat_action_probability",
+                "0.25",
                 "--learning_rate",
                 "1e-4",
                 "--horizon",
