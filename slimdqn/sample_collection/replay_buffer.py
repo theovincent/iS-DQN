@@ -110,10 +110,8 @@ class ReplayBuffer:
             # The trajectory is composed of stack_size observations + effective_horizon observations, the next state is irrelevant.
             effective_horizon = trajectory_len - self._stack_size
         else:
-            if trajectory_len == 0:
-                return None
             # special case where the episode starts with an observation leading to a terminal state.
-            elif trajectory_len == 1:
+            elif trajectory_len <= self._stack_size:
                 is_terminal = True
             # first time that the terminal flag is True, the state does not lead to a terminal state (only the next state does).
             else:
