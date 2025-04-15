@@ -125,12 +125,10 @@ class GIDQN:
         target = self.compute_target(params_target, sample)
         q_value = self.network.apply(params, sample.state)[sample.action]
 
-        l2_loss = jnp.square(q_value - target)
-        # \hat{V}[target_k] = target_k^2 - target_k * Q_{k+1}
-        # However, \grad_k \hat{V}[target_k] = 2 * target_k * \grad_k target_k - 2 * \grad_k target_k * Q_{k+1}
-        # Therefore, we compute \hat{V}[target_k] as target_k^2 - 2 * target_k * Q_{k+1}
-        variance_loss = target**2 - 2 * target * jax.lax.stop_gradient(q_value)
-        return l2_loss - variance_loss, l2_loss, target**2 - target * q_value
+        # The "true" loss is: (Q(s, a) - target)^2 - (target**2 - 2 * stop_grad(Q(s, a)) * target),
+        # which is equal to Q(s, a)^2 + 2 * target * (stop_grad(Q(s,a)) - Q(s, a)).
+        simplified_loss = q_value**2 + 2 * target * (jax.lax.stop_gradient(q_value) - q_value)
+        return simplified_loss, jnp.square(q_value - target), target**2 - q_value * target
 
     def compute_target(self, params: FrozenDict, sample: ReplayElement):
         # computes the target value for single sample
