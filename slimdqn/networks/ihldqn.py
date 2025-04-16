@@ -38,7 +38,7 @@ class iHLDQN:
         learning_rate: float,
         gamma: float,
         update_horizon: int,
-        update_to_data: int,
+        data_to_update: int,
         target_update_frequency: int,
         target_sync_frequency: int,
         min_value: float,
@@ -66,24 +66,27 @@ class iHLDQN:
 
         self.gamma = gamma
         self.update_horizon = update_horizon
-        self.update_to_data = update_to_data
+        self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
         self.target_sync_frequency = target_sync_frequency
         self.cumulated_losses = np.zeros(self.n_networks)
         self.cumulated_unsupported_probs = np.zeros(self.n_networks)
+        self.cumulated_entropies = np.zeros(self.n_networks)
         self.support = jnp.linspace(min_value, max_value, self.n_bins + 1, dtype=jnp.float32)
         self.bin_centers = (self.support[:-1] + self.support[1:]) / 2
+        self.clip_target = lambda target: jnp.clip(target, min_value, max_value)
         self.sigma = sigma
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
-        if step % self.update_to_data == 0:
+        if step % self.data_to_update == 0:
             batch_samples = replay_buffer.sample()
 
-            self.params, self.optimizer_state, losses, unsupported_probs = self.learn_on_batch(
+            self.params, self.optimizer_state, losses, unsupported_probs, entropies = self.learn_on_batch(
                 self.params, self.target_params, self.optimizer_state, batch_samples
             )
             self.cumulated_losses += losses
             self.cumulated_unsupported_probs += unsupported_probs
+            self.cumulated_entropies += entropies
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
@@ -93,13 +96,19 @@ class iHLDQN:
             # Window shift
             self.params = shift_params(self.params)
 
-            logs = {"loss": self.cumulated_losses.mean() / (self.target_update_frequency / self.update_to_data)}
+            logs = {
+                "loss": self.cumulated_losses.mean() / (self.target_update_frequency / self.data_to_update),
+                "entropy": self.cumulated_entropies.mean() / (self.target_update_frequency / self.data_to_update),
+            }
             for idx_network in range(self.n_networks):
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
-                    self.target_update_frequency / self.update_to_data
+                    self.target_update_frequency / self.data_to_update
                 )
                 logs[f"networks/{idx_network}_unsupported_prob"] = self.cumulated_unsupported_probs[idx_network] / (
-                    self.target_update_frequency / self.update_to_data
+                    self.target_update_frequency / self.data_to_update
+                )
+                logs[f"networks/{idx_network}_entropy"] = self.cumulated_entropies[idx_network] / (
+                    self.target_update_frequency / self.data_to_update
                 )
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
             self.cumulated_unsupported_probs = np.zeros_like(self.cumulated_unsupported_probs)
@@ -119,27 +128,35 @@ class iHLDQN:
         optimizer_state,
         batch_samples,
     ):
-        grad_loss, (losses, unsupported_probs) = jax.grad(self.loss_on_batch, has_aux=True)(
+        grad_loss, (losses, unsupported_probs, entropies) = jax.grad(self.loss_on_batch, has_aux=True)(
             params, params_target, batch_samples
         )
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
 
-        return params, optimizer_state, losses, unsupported_probs
+        return params, optimizer_state, losses, unsupported_probs, entropies
 
     def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
         # map over params, then map over samples
-        losses, unsupported_probs = jax.vmap(jax.vmap(self.loss, in_axes=(None, None, 0)), in_axes=(0, 0, None))(
-            params, params_target, samples
+        losses, unsupported_probs, entropies = jax.vmap(
+            jax.vmap(self.loss, in_axes=(None, None, 0)), in_axes=(0, 0, None)
+        )(params, params_target, samples)
+        return losses.mean(axis=1).sum(axis=0), (
+            losses.mean(axis=1),
+            unsupported_probs.mean(axis=1),
+            entropies.mean(axis=1),
         )
-        return losses.mean(axis=1).sum(axis=0), (losses.mean(axis=1), unsupported_probs.mean(axis=1))
 
-    def loss(self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement) -> Tuple[jax.Array, jax.Array]:
+    def loss(
+        self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement
+    ) -> Tuple[jax.Array, jax.Array, jax.Array]:
         # computes the loss for a single sample
         target = self.compute_target(params_target, sample)
         q_logits = self.network.apply_fn(params, sample.state)[sample.action]
         projected_target, unsupported_prob = self.project_target_on_support(target)
-        return optax.softmax_cross_entropy(q_logits, projected_target), unsupported_prob
+        cross_entropy = optax.softmax_cross_entropy(q_logits, projected_target)
+        entropy = -jnp.sum(projected_target * jnp.log(jnp.maximum(projected_target, 1e-5)))
+        return cross_entropy, unsupported_prob, entropy
 
     def compute_target(self, params: FrozenDict, sample: ReplayElement):
         # computes the target value for single sample
@@ -150,11 +167,11 @@ class iHLDQN:
 
     def project_target_on_support(self, target: jax.Array) -> jax.Array:
         # We use the error function. It is linked with the cumulative distribution function of a gaussian distribution.
-        erf_support = jax.scipy.special.erf((self.support - target) / (jnp.sqrt(2) * self.sigma))
+        erf_support = jax.scipy.special.erf((self.support - self.clip_target(target)) / (jnp.sqrt(2) * self.sigma))
         # We also output the probability mass which does not lie on the support
         # CDF(min support) + 1 - CDF(max support)
         return (
-            (erf_support[1:] - erf_support[:-1]) / (erf_support[-1] - erf_support[0] + 1e-6),
+            (erf_support[1:] - erf_support[:-1]) / (erf_support[-1] - erf_support[0] + 1e-9),
             erf_support[0] / 2 + 1 - erf_support[-1] / 2,
         )
 

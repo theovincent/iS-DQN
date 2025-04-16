@@ -63,12 +63,10 @@ class TestGIDQN(unittest.TestCase):
 
         computed_loss = self.q.loss(params, params, sample)[0]
 
-        target = self.q.compute_target(params, sample)
         prediction = self.q.network.apply(params, sample.state)[sample.action]
-        l2_loss = np.square(target - prediction)
-        variance_loss = target**2 - 2 * target * prediction
+        loss = prediction**2
 
-        self.assertEqual(l2_loss - variance_loss, computed_loss)
+        self.assertEqual(loss, computed_loss)
 
     def test_best_action(self):
         print(f"-------------- Random key {self.random_seed} --------------")

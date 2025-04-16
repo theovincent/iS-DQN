@@ -36,7 +36,7 @@ class aGIHLDQN:
         learning_rate: float,
         gamma: float,
         update_horizon: int,
-        update_to_data: int,
+        data_to_update: int,
         target_update_frequency: int,
         min_value: float,
         max_value: float,
@@ -62,17 +62,18 @@ class aGIHLDQN:
 
         self.gamma = gamma
         self.update_horizon = update_horizon
-        self.update_to_data = update_to_data
+        self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
         self.cumulated_losses = np.zeros(self.n_networks)
         self.cumulated_unsupported_probs = np.zeros(self.n_networks)
         self.cumulated_entropies = np.zeros(self.n_networks)
         self.support = jnp.linspace(min_value, max_value, self.n_bins + 1, dtype=jnp.float32)
         self.bin_centers = (self.support[:-1] + self.support[1:]) / 2
+        self.clip_target = lambda target: jnp.clip(target, min_value, max_value)
         self.sigma = sigma
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
-        if step % self.update_to_data == 0:
+        if step % self.data_to_update == 0:
             batch_samples = replay_buffer.sample()
 
             self.params, self.optimizer_state, losses, unsupported_probs, entropies = self.learn_on_batch(
@@ -90,16 +91,19 @@ class aGIHLDQN:
             # Window shift
             self.params = shift_params(self.params)
 
-            logs = {"loss": self.cumulated_losses.mean() / (self.target_update_frequency / self.update_to_data)}
+            logs = {
+                "loss": self.cumulated_losses.mean() / (self.target_update_frequency / self.data_to_update),
+                "entropy": self.cumulated_entropies.mean() / (self.target_update_frequency / self.data_to_update),
+            }
             for idx_network in range(self.n_networks):
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
-                    self.target_update_frequency / self.update_to_data
+                    self.target_update_frequency / self.data_to_update
                 )
                 logs[f"networks/{idx_network}_unsupported_prob"] = self.cumulated_unsupported_probs[idx_network] / (
-                    self.target_update_frequency / self.update_to_data
+                    self.target_update_frequency / self.data_to_update
                 )
                 logs[f"networks/{idx_network}_entropy"] = self.cumulated_entropies[idx_network] / (
-                    self.target_update_frequency / self.update_to_data
+                    self.target_update_frequency / self.data_to_update
                 )
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
             self.cumulated_unsupported_probs = np.zeros_like(self.cumulated_unsupported_probs)
@@ -162,11 +166,11 @@ class aGIHLDQN:
 
     def project_target_on_support(self, target: jax.Array) -> jax.Array:
         # We use the error function. It is linked with the cumulative distribution function of a gaussian distribution.
-        erf_support = jax.scipy.special.erf((self.support - target) / (jnp.sqrt(2) * self.sigma))
+        erf_support = jax.scipy.special.erf((self.support - self.clip_target(target)) / (jnp.sqrt(2) * self.sigma))
         # We also output the probability mass which does not lie on the support
         # CDF(min support) + 1 - CDF(max support)
         return (
-            (erf_support[1:] - erf_support[:-1]) / (erf_support[-1] - erf_support[0] + 1e-6),
+            (erf_support[1:] - erf_support[:-1]) / (erf_support[-1] - erf_support[0] + 1e-9),
             erf_support[0] / 2 + 1 - erf_support[-1] / 2,
         )
 

@@ -36,7 +36,7 @@ class iDQN:
         learning_rate: float,
         gamma: float,
         update_horizon: int,
-        update_to_data: int,
+        data_to_update: int,
         target_update_frequency: int,
         target_sync_frequency: int,
         adam_eps: float = 1e-8,
@@ -57,19 +57,21 @@ class iDQN:
 
         self.gamma = gamma
         self.update_horizon = update_horizon
-        self.update_to_data = update_to_data
+        self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
         self.target_sync_frequency = target_sync_frequency
         self.cumulated_losses = np.zeros(self.n_networks)
+        self.cumulated_variances = np.zeros(self.n_networks)
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
-        if step % self.update_to_data == 0:
+        if step % self.data_to_update == 0:
             batch_samples = replay_buffer.sample()
 
-            self.params, self.optimizer_state, losses = self.learn_on_batch(
+            self.params, self.optimizer_state, losses, variances = self.learn_on_batch(
                 self.params, self.target_params, self.optimizer_state, batch_samples
             )
             self.cumulated_losses += losses
+            self.cumulated_variances += variances
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
@@ -79,12 +81,19 @@ class iDQN:
             # Window shift
             self.params = shift_params(self.params)
 
-            logs = {"loss": np.mean(self.cumulated_losses) / (self.target_update_frequency / self.update_to_data)}
+            logs = {
+                "loss": np.mean(self.cumulated_losses) / (self.target_update_frequency / self.data_to_update),
+                "variance": np.mean(self.cumulated_variances) / (self.target_update_frequency / self.data_to_update),
+            }
             for idx_network in range(self.n_networks):
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
-                    self.target_update_frequency / self.update_to_data
+                    self.target_update_frequency / self.data_to_update
+                )
+                logs[f"networks/{idx_network}_variance"] = self.cumulated_variances[idx_network] / (
+                    self.target_update_frequency / self.data_to_update
                 )
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
+            self.cumulated_variances = np.zeros_like(self.cumulated_losses)
 
             return True, logs
 
@@ -101,24 +110,26 @@ class iDQN:
         optimizer_state,
         batch_samples,
     ):
-        grad_loss, losses = jax.grad(self.loss_on_batch, has_aux=True)(params, params_target, batch_samples)
+        grad_loss, (losses, variances) = jax.grad(self.loss_on_batch, has_aux=True)(
+            params, params_target, batch_samples
+        )
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
 
-        return params, optimizer_state, losses
+        return params, optimizer_state, losses, variances
 
     def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
         # map over params, then map over samples
-        losses = jax.vmap(jax.vmap(self.loss, in_axes=(None, None, 0)), in_axes=(0, 0, None))(
+        losses, variances = jax.vmap(jax.vmap(self.loss, in_axes=(None, None, 0)), in_axes=(0, 0, None))(
             params, params_target, samples
         )
-        return losses.mean(axis=1).sum(axis=0), losses.mean(axis=1)
+        return losses.mean(axis=1).sum(axis=0), (losses.mean(axis=1), variances.mean(axis=1))
 
     def loss(self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement):
         # computes the loss for a single sample
         target = self.compute_target(params_target, sample)
         q_value = self.network.apply(params, sample.state)[sample.action]
-        return jnp.square(q_value - target)
+        return jnp.square(q_value - target), target**2 - target * q_value
 
     def compute_target(self, params: FrozenDict, sample: ReplayElement):
         # computes the target value for single sample

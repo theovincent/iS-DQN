@@ -121,7 +121,7 @@ def add_base_arguments(parser: argparse.ArgumentParser):
     )
     parser.add_argument(
         "-utd",
-        "--update_to_data",
+        "--data_to_update",
         help="Number of data points to collect per online Q-network update.",
         type=float,
         default=1,

@@ -34,7 +34,7 @@ class GIDQN:
         learning_rate: float,
         gamma: float,
         update_horizon: int,
-        update_to_data: int,
+        data_to_update: int,
         target_update_frequency: int,
         adam_eps: float = 1e-8,
     ):
@@ -53,13 +53,13 @@ class GIDQN:
 
         self.gamma = gamma
         self.update_horizon = update_horizon
-        self.update_to_data = update_to_data
+        self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
         self.cumulated_losses = np.zeros(self.n_networks)
         self.cumulated_variances = np.zeros(self.n_networks)
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
-        if step % self.update_to_data == 0:
+        if step % self.data_to_update == 0:
             batch_samples = replay_buffer.sample()
 
             self.params, self.optimizer_state, losses, variances = self.learn_on_batch(
@@ -76,13 +76,16 @@ class GIDQN:
             # Window shift
             self.params = shift_params(self.params)
 
-            logs = {"loss": np.mean(self.cumulated_losses) / (self.target_update_frequency / self.update_to_data)}
+            logs = {
+                "loss": np.mean(self.cumulated_losses) / (self.target_update_frequency / self.data_to_update),
+                "variance": np.mean(self.cumulated_variances) / (self.target_update_frequency / self.data_to_update),
+            }
             for idx_network in range(self.n_networks):
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
-                    self.target_update_frequency / self.update_to_data
+                    self.target_update_frequency / self.data_to_update
                 )
-                logs[f"networks/{idx_network}_variances"] = self.cumulated_variances[idx_network] / (
-                    self.target_update_frequency / self.update_to_data
+                logs[f"networks/{idx_network}_variance"] = self.cumulated_variances[idx_network] / (
+                    self.target_update_frequency / self.data_to_update
                 )
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
             self.cumulated_variances = np.zeros_like(self.cumulated_variances)

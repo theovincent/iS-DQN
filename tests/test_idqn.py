@@ -62,7 +62,7 @@ class TestiDQN(unittest.TestCase):
         idx_params = jax.random.randint(self.key, (), 0, self.n_networks)
         params = jax.tree.map(lambda param: param[idx_params], self.q.params)
 
-        computed_loss = self.q.loss(params, params, sample)
+        computed_loss = self.q.loss(params, params, sample)[0]
 
         target = self.q.compute_target(params, sample)
         prediction = self.q.network.apply(params, sample.state)[sample.action]
