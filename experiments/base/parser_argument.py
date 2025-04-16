@@ -95,7 +95,7 @@ def add_base_arguments(parser: argparse.ArgumentParser):
         "--horizon",
         help="Horizon for truncation.",
         type=int,
-        default=1000,
+        default=1_000,
     )
     parser.add_argument(
         "-at",
@@ -121,7 +121,7 @@ def add_base_arguments(parser: argparse.ArgumentParser):
     )
     parser.add_argument(
         "-utd",
-        "--update_to_data",
+        "--data_to_update",
         help="Number of data points to collect per online Q-network update.",
         type=float,
         default=1,
@@ -149,8 +149,7 @@ def add_base_arguments(parser: argparse.ArgumentParser):
     )
 
 
-@output_added_arguments
-def add_dqn_arguments(parser: argparse.ArgumentParser):
+def add_target_update_frequency(parser: argparse.ArgumentParser):
     parser.add_argument(
         "-tuf",
         "--target_update_frequency",
@@ -160,8 +159,7 @@ def add_dqn_arguments(parser: argparse.ArgumentParser):
     )
 
 
-@output_added_arguments
-def add_idqn_arguments(parser: argparse.ArgumentParser):
+def add_n_networks(parser: argparse.ArgumentParser):
     parser.add_argument(
         "-nn",
         "--n_networks",
@@ -169,13 +167,9 @@ def add_idqn_arguments(parser: argparse.ArgumentParser):
         type=int,
         default=3,
     )
-    parser.add_argument(
-        "-tuf",
-        "--target_update_frequency",
-        help="Number of training steps before updating the target Q-networks. (T)",
-        type=int,
-        default=200,
-    )
+
+
+def add_target_sync_frequency(parser: argparse.ArgumentParser):
     parser.add_argument(
         "-tsf",
         "--target_sync_frequency",
@@ -183,3 +177,86 @@ def add_idqn_arguments(parser: argparse.ArgumentParser):
         type=int,
         default=10,
     )
+
+
+def add_histogram_loss_parameters(parser: argparse.ArgumentParser):
+    parser.add_argument(
+        "-nb",
+        "--n_bins",
+        help="Number of bins composing the histogram.",
+        type=int,
+        default=50,
+    )
+    parser.add_argument(
+        "-minn",
+        "--min_value",
+        help="Value of the lowest learnable value of the target.",
+        type=float,
+        default=-100,
+    )
+    parser.add_argument(
+        "-maxn",
+        "--max_value",
+        help="Value of the highest learnable value of the target.",
+        type=float,
+        default=100,
+    )
+    parser.add_argument(
+        "-sigma",
+        "--sigma",
+        help="Standard deviation of each target sample. If \sigma / \eta = 0.75, then \sigma = 0.75 * (max_value - min_value) / n_bins",
+        type=float,
+        default=3,
+    )
+
+
+@output_added_arguments
+def add_dqn_arguments(parser: argparse.ArgumentParser):
+    add_target_update_frequency(parser)
+
+
+@output_added_arguments
+def add_idqn_arguments(parser: argparse.ArgumentParser):
+    add_n_networks(parser)
+    add_target_update_frequency(parser)
+    add_target_sync_frequency(parser)
+
+
+@output_added_arguments
+def add_agidqn_arguments(parser: argparse.ArgumentParser):
+    add_n_networks(parser)
+    add_target_update_frequency(parser)
+
+
+@output_added_arguments
+def add_gidqn_arguments(parser: argparse.ArgumentParser):
+    add_n_networks(parser)
+    add_target_update_frequency(parser)
+
+
+@output_added_arguments
+def add_hldqn_arguments(parser: argparse.ArgumentParser):
+    add_target_update_frequency(parser)
+    add_histogram_loss_parameters(parser)
+
+
+@output_added_arguments
+def add_ihldqn_arguments(parser: argparse.ArgumentParser):
+    add_n_networks(parser)
+    add_target_update_frequency(parser)
+    add_target_sync_frequency(parser)
+    add_histogram_loss_parameters(parser)
+
+
+@output_added_arguments
+def add_agihldqn_arguments(parser: argparse.ArgumentParser):
+    add_n_networks(parser)
+    add_target_update_frequency(parser)
+    add_histogram_loss_parameters(parser)
+
+
+@output_added_arguments
+def add_gihldqn_arguments(parser: argparse.ArgumentParser):
+    add_n_networks(parser)
+    add_target_update_frequency(parser)
+    add_histogram_loss_parameters(parser)

@@ -37,7 +37,7 @@ def run(argvs=sys.argv[1:]):
         learning_rate=p["learning_rate"],
         gamma=p["gamma"],
         update_horizon=p["update_horizon"],
-        update_to_data=p["update_to_data"],
+        data_to_update=p["data_to_update"],
         target_update_frequency=p["target_update_frequency"],
         target_sync_frequency=p["target_sync_frequency"],
     )

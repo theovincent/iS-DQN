@@ -32,7 +32,7 @@ def prepare_logs(env_name: str, algo_name: str, argvs: List[str]):
     store_params(p, shared_params, agent_params)
 
     p["wandb"] = wandb.init(
-        project="i-dqn",
+        project="G.I.DQN",
         config=p,
         name=str(p["seed"]),
         group=f"{p['algo_name']}_{p['experiment_name']}",
@@ -61,7 +61,7 @@ def check_experiment(p: dict):
         try:
             loaded_old_params = json.load(open(params_path, "r"))
             old_params = loaded_old_params["shared_parameters"]
-            if p["algo_name"] in list(old_params.keys()):
+            if p["algo_name"] in list(loaded_old_params.keys()):
                 old_params.update(loaded_old_params[p["algo_name"]])
 
             for param in p:
@@ -118,7 +118,6 @@ def store_params(p: dict, shared_params: List[str], agent_params: List[str]):
     }
 
     json.dump(ordered_params_dict, open(params_path, "w"), indent=4)
-
 
 
 def save_data(p: dict, episode_returns: list, episode_lengths: list, model):
