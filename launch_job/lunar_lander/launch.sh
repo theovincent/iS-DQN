@@ -7,7 +7,7 @@ N_NETWORS=5
 TARGET_UPDATE_FREQ=800
 TARGET_SYNC_FREQ=5
 
-PLATFORM="cluster"  # local
+PLATFORM="normal/cluster"  # normal/local
 
 SHARED_ARGS="$SHARED_ARGS --features $FEATURE $FEATURE --target_update_frequency $TARGET_UPDATE_FREQ"
 
@@ -29,7 +29,7 @@ GIDQN_ARGS="--n_networks $N_NETWORS"
 launch_job/lunar_lander/${PLATFORM}_gidqn.sh --first_seed 6 --last_seed 20 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $GIDQN_ARGS
 sleep 600
 
-# # ----- KL Loss -----
+# ----- KL Loss -----
 KL_ARGS="--experiment_name KL_n_net${N_NETWORS}_target_freq${TARGET_UPDATE_FREQ}_sync_freq${TARGET_SYNC_FREQ} \
     --n_bins 51 --min_value -100 --max_value 100 --sigma 2.94117647"
 
