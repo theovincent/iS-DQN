@@ -66,6 +66,7 @@ class aGIHLDQN:
         self.target_update_frequency = target_update_frequency
         self.cumulated_losses = np.zeros(self.n_networks)
         self.cumulated_unsupported_probs = np.zeros(self.n_networks)
+        self.cumulated_entropies = np.zeros(self.n_networks)
         self.support = jnp.linspace(min_value, max_value, self.n_bins + 1, dtype=jnp.float32)
         self.bin_centers = (self.support[:-1] + self.support[1:]) / 2
         self.sigma = sigma
@@ -74,11 +75,12 @@ class aGIHLDQN:
         if step % self.update_to_data == 0:
             batch_samples = replay_buffer.sample()
 
-            self.params, self.optimizer_state, losses, unsupported_probs = self.learn_on_batch(
+            self.params, self.optimizer_state, losses, unsupported_probs, entropies = self.learn_on_batch(
                 self.params, self.target_params, self.optimizer_state, batch_samples
             )
             self.cumulated_losses += losses
             self.cumulated_unsupported_probs += unsupported_probs
+            self.cumulated_entropies += entropies
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
@@ -96,8 +98,12 @@ class aGIHLDQN:
                 logs[f"networks/{idx_network}_unsupported_prob"] = self.cumulated_unsupported_probs[idx_network] / (
                     self.target_update_frequency / self.update_to_data
                 )
+                logs[f"networks/{idx_network}_entropy"] = self.cumulated_entropies[idx_network] / (
+                    self.target_update_frequency / self.update_to_data
+                )
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
             self.cumulated_unsupported_probs = np.zeros_like(self.cumulated_unsupported_probs)
+            self.cumulated_entropies = np.zeros_like(self.cumulated_entropies)
 
             return True, logs
 
@@ -111,13 +117,13 @@ class aGIHLDQN:
         optimizer_state,
         batch_samples,
     ):
-        grad_loss, (losses, unsupported_probs) = jax.grad(self.loss_on_batch, has_aux=True)(
+        grad_loss, (losses, unsupported_probs, entropies) = jax.grad(self.loss_on_batch, has_aux=True)(
             params, params_target, batch_samples
         )
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
 
-        return params, optimizer_state, losses, unsupported_probs
+        return params, optimizer_state, losses, unsupported_probs, entropies
 
     def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
         # Create a list of target params [\bar{\theta}_0, \theta_1, ..., \theta_{K-1}]
@@ -127,17 +133,25 @@ class aGIHLDQN:
         )
 
         # map over params, then map over samples
-        losses, unsupported_probs = jax.vmap(jax.vmap(self.loss, in_axes=(None, None, 0)), in_axes=(0, 0, None))(
-            params, params_targets, samples
+        losses, unsupported_probs, entropies = jax.vmap(
+            jax.vmap(self.loss, in_axes=(None, None, 0)), in_axes=(0, 0, None)
+        )(params, params_targets, samples)
+        return losses.mean(axis=1).sum(axis=0), (
+            losses.mean(axis=1),
+            unsupported_probs.mean(axis=1),
+            entropies.mean(axis=1),
         )
-        return losses.mean(axis=1).sum(axis=0), (losses.mean(axis=1), unsupported_probs.mean(axis=1))
 
-    def loss(self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement) -> Tuple[jax.Array, jax.Array]:
+    def loss(
+        self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement
+    ) -> Tuple[jax.Array, jax.Array, jax.Array]:
         # computes the loss for a single sample
         target = self.compute_target(params_target, sample)
         q_logits = self.network.apply_fn(params, sample.state)[sample.action]
         projected_target, unsupported_prob = self.project_target_on_support(target)
-        return optax.softmax_cross_entropy(q_logits, projected_target), unsupported_prob
+        cross_entropy = optax.softmax_cross_entropy(q_logits, projected_target)
+        entropy = -jnp.sum(projected_target * jnp.log(jnp.maximum(projected_target, 1e-5)))
+        return cross_entropy, unsupported_prob, entropy
 
     def compute_target(self, params: FrozenDict, sample: ReplayElement):
         # computes the target value for single sample
