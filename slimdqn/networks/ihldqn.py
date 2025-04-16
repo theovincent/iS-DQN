@@ -112,6 +112,7 @@ class iHLDQN:
                 )
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
             self.cumulated_unsupported_probs = np.zeros_like(self.cumulated_unsupported_probs)
+            self.cumulated_entropies = np.zeros_like(self.cumulated_unsupported_probs)
 
             return True, logs
 

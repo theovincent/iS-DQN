@@ -57,6 +57,7 @@ class DQN:
                 "variance": self.cumulated_variance / (self.target_update_frequency / self.data_to_update),
             }
             self.cumulated_loss = 0
+            self.cumulated_variance = 0
 
             return True, logs
         return False, {}

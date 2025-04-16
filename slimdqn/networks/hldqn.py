@@ -74,6 +74,7 @@ class HLDQN:
             }
             self.cumulated_loss = 0
             self.cumulated_unsupported_prob = 0
+            self.cumulated_entropy = 0
 
             return True, logs
         return False, {}
@@ -86,7 +87,7 @@ class HLDQN:
         optimizer_state,
         batch_samples,
     ):
-        (loss, unsupported_prob, entropy), grad_loss = jax.value_and_grad(self.loss_on_batch, has_aux=True)(
+        (loss, (unsupported_prob, entropy)), grad_loss = jax.value_and_grad(self.loss_on_batch, has_aux=True)(
             params, params_target, batch_samples
         )
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
@@ -98,7 +99,7 @@ class HLDQN:
         losses, unsupported_probs, entropies = jax.vmap(self.loss, in_axes=(None, None, 0))(
             params, params_target, samples
         )
-        return losses.mean(), unsupported_probs.mean(), entropies.mean()
+        return losses.mean(), (unsupported_probs.mean(), entropies.mean()) 
 
     def loss(self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement):
         # computes the loss for a single sample
