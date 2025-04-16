@@ -131,4 +131,5 @@ def save_data(p: dict, episode_returns: list, episode_lengths: list, model):
         open(episode_returns_and_lengths_path, "w"),
         indent=4,
     )
-    pickle.dump(model, open(model_path, "wb"))
+    if model is not None:
+        pickle.dump(model, open(model_path, "wb"))

@@ -22,6 +22,7 @@ def train(
     env.reset()
     episode_returns_per_epoch = [[0]]
     episode_lengths_per_epoch = [[0]]
+    best_avg_return = -float("inf")
 
     for idx_epoch in tqdm(range(p["n_epochs"])):
         n_training_steps_epoch = 0
@@ -62,8 +63,15 @@ def train(
             }
         )
 
+        epoch_avg_return = np.mean(episode_returns_per_epoch[-1])
+        if epoch_avg_return > best_avg_return:
+            best_avg_return = epoch_avg_return
+            agent_to_save = agent.get_model()
+        else:
+            agent_to_save = None
+
         if idx_epoch < p["n_epochs"] - 1:
             episode_returns_per_epoch.append([0])
             episode_lengths_per_epoch.append([0])
 
-        save_data(p, episode_returns_per_epoch, episode_lengths_per_epoch, agent.get_model())
+        save_data(p, episode_returns_per_epoch, episode_lengths_per_epoch, agent_to_save)
