@@ -107,7 +107,7 @@ class ReplayBuffer:
 
         # The state is located at the first stack_size observations
         o_tm1_slice = slice(0, self._stack_size - 1)
-        # The next state is located udpate_horizon observations after the state
+        # The next state is located update_horizon observations after the state
         o_t_slice = slice(o_tm1_slice.start + self._update_horizon, o_tm1_slice.stop + self._update_horizon)
 
         return self._replay_element_from_slices(o_tm1_slice, o_t_slice, True)
@@ -140,7 +140,7 @@ class ReplayBuffer:
             if gamma_slice.start <= t <= gamma_slice.stop:
                 r_t += transition_t.reward * (self._gamma ** (t - gamma_slice.start))
 
-            # If we should be accumulating frames for the frame-stack?
+            # If we should be accumulating the observations?
             if o_tm1_slice.start <= t <= o_tm1_slice.stop:
                 o_tm1[..., t - o_tm1_slice.start] = transition_t.observation
             if o_t_slice.start <= t <= o_t_slice.stop:
@@ -158,22 +158,19 @@ class ReplayBuffer:
 
         if transition.is_terminal:
             trajectory_len = len(self._trajectory)
-            beginning_of_trajectory = trajectory_len < self._stack_size + self._update_horizon
-            # If there are enough transitions to create a replay element, then we create it.
-            # This replay element is not terminal. It is only the next state that leads to a terminal state.
-            if trajectory_len >= 1 + self._update_horizon:
-                yield self._non_terminal_replay_element()
-                self._trajectory.popleft()
-
             # Special case where the terminal flag is raised before seeing update_horizon + stack_size observations.
-            # In this case, we create all possible samples.
-            if beginning_of_trajectory:
-                for o_tm1_slice_stop in range(0, trajectory_len):
+            if trajectory_len < self._stack_size + self._update_horizon:
+                # In this case, we create all possible samples starting from the first not yet considered observation.
+                start_index = max(trajectory_len - 1 - self._update_horizon, 0)
+                for o_tm1_slice_stop in range(start_index, trajectory_len):
                     o_tm1_slice = slice(o_tm1_slice_stop - self._stack_size + 1, o_tm1_slice_stop)
                     # The next state is located udpate_horizon observations after the state
                     o_t_slice = slice(o_tm1_slice.start + self._update_horizon, o_tm1_slice.stop + self._update_horizon)
-                    yield self._replay_element_from_slices(o_tm1_slice, o_t_slice, True)
+                    yield self._replay_element_from_slices(o_tm1_slice, o_t_slice, o_t_slice.stop >= trajectory_len)
             else:
+                # First replay element is not terminal. It is only the next state that leads to a terminal state.
+                yield self._non_terminal_replay_element()
+                self._trajectory.popleft()
                 while replay_element := self._terminal_replay_element():
                     yield replay_element
                     self._trajectory.popleft()
