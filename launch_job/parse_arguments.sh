@@ -37,6 +37,11 @@ function parse_arguments() {
                 shift
                 shift
                 ;;
+            -tn | --tmux_name)
+                TMUX_NAME=$2
+                shift
+                shift
+                ;;
             -?* | ?*)
                 ARGS="$ARGS $1"
                 shift
@@ -56,6 +61,10 @@ function parse_arguments() {
     if [[ $N_PARALLEL_SEEDS == "" ]]
     then
         N_PARALLEL_SEEDS=1
+    fi
+    if [[ $TMUX_NAME == "" ]]
+    then
+        TMUX_NAME=slimdqn
     fi
 
     [ -d experiments/$ENV_NAME/logs/$EXPERIMENT_NAME/$ALGO_NAME ] || mkdir -p experiments/$ENV_NAME/logs/$EXPERIMENT_NAME/$ALGO_NAME

@@ -9,6 +9,11 @@ GAME="Assault"
 
 PLATFORM="normal/cluster"  # nhrfau/cluster normal/local
 
+if [ $PLATFORM == "normal/local" ]
+then
+    SHARED_ARGS="$SHARED_ARGS --tmux_name slimdqn"
+fi
+
 SHARED_ARGS="$SHARED_ARGS --target_update_frequency $TARGET_UPDATE_FREQ"
 
 # ----- L2 Loss -----
