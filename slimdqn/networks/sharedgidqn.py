@@ -64,7 +64,7 @@ class SharedGIDQN:
                 "loss": np.mean(self.cumulated_losses) / (self.target_update_frequency / self.data_to_update),
                 "variance": np.mean(self.cumulated_variances) / (self.target_update_frequency / self.data_to_update),
             }
-            for idx_network in range(min(self.n_networks - 1, 10)):
+            for idx_network in range(min(self.n_networks - 1, 5)):
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
                     self.target_update_frequency / self.data_to_update
                 )

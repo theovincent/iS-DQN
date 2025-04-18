@@ -31,7 +31,7 @@ def run(argvs=sys.argv[1:]):
     )
     agent = CrownGIDQN(
         q_key,
-        env.observation_shape[0],
+        (env.state_height, env.state_width, env.n_stacked_frames),
         env.n_actions,
         n_networks=p["n_networks"],
         features=p["features"],
