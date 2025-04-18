@@ -36,6 +36,10 @@ sleep 40
 
 SHAREDGIDQN_ARGS="--n_networks $N_NETWORS"
 launch_job/lunar_lander/${PLATFORM}_sharedgidqn.sh --first_seed 1 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $SHAREDGIDQN_ARGS
+sleep 40
+
+CROWNGIDQN_ARGS="--n_networks $N_NETWORS"
+launch_job/lunar_lander/${PLATFORM}_crowngidqn.sh --first_seed 1 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $CROWNGIDQN_ARGS
 sleep 600
 
 # ----- KL Loss -----

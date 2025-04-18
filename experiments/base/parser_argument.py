@@ -241,6 +241,12 @@ def add_sharedgidqn_arguments(parser: argparse.ArgumentParser):
 
 
 @output_added_arguments
+def add_crowngidqn_arguments(parser: argparse.ArgumentParser):
+    add_n_networks(parser)
+    add_target_update_frequency(parser)
+
+
+@output_added_arguments
 def add_hldqn_arguments(parser: argparse.ArgumentParser):
     add_target_update_frequency(parser)
     add_histogram_loss_parameters(parser)

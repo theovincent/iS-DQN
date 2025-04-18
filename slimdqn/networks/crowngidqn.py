@@ -10,7 +10,7 @@ from slimdqn.networks.architectures.dqn import DQNNet
 from slimdqn.sample_collection.replay_buffer import ReplayBuffer, ReplayElement
 
 
-class SharedGIDQN:
+class CrownGIDQN:
     def __init__(
         self,
         key: jax.Array,
@@ -42,8 +42,8 @@ class SharedGIDQN:
         self.update_horizon = update_horizon
         self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
-        self.cumulated_losses = np.zeros(self.n_networks - 1)
-        self.cumulated_variances = np.zeros(self.n_networks - 1)
+        self.cumulated_losses = np.zeros(self.n_networks)
+        self.cumulated_variances = np.zeros(self.n_networks)
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
         if step % self.data_to_update == 0:
@@ -57,14 +57,11 @@ class SharedGIDQN:
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
-            # Window shift
-            self.params = self.shift_params(self.params)
-
             logs = {
                 "loss": np.mean(self.cumulated_losses) / (self.target_update_frequency / self.data_to_update),
                 "variance": np.mean(self.cumulated_variances) / (self.target_update_frequency / self.data_to_update),
             }
-            for idx_network in range(min(self.n_networks - 1, 10)):
+            for idx_network in range(min(self.n_networks, 10)):
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
                     self.target_update_frequency / self.data_to_update
                 )
@@ -95,14 +92,15 @@ class SharedGIDQN:
         batch_size = samples.state.shape[0]
         # shape (2 * batch_size, n_networks, n_actions)
         all_q_values = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
-        # shape (batch_size, n_networks - 1)
-        q_values = jax.vmap(lambda q_value, action: q_value[:, action])(all_q_values[:batch_size, 1:], samples.action)
-        targets = jax.vmap(self.compute_target)(samples, all_q_values[batch_size:, :-1])
+        # shape (batch_size, n_networks)
+        q_values = jax.vmap(lambda q_value, action: q_value[:, action])(all_q_values[:batch_size], samples.action)
+        targets = jax.vmap(self.compute_target)(samples, all_q_values[batch_size:])
+        rollded_targets = jnp.roll(targets, shift=1, axis=1)
 
-        # shape (batch_size, n_networks - 1, n_actions)
-        losses = jnp.square(q_values) + 2 * targets * (jax.lax.stop_gradient(q_values) - q_values)
-        td_losses = jnp.square(q_values - targets)
-        variances = jnp.square(targets) - q_values * targets
+        # shape (batch_size, n_networks, n_actions)
+        losses = jnp.square(q_values) + 2 * rollded_targets * (jax.lax.stop_gradient(q_values) - q_values)
+        td_losses = jnp.square(q_values - rollded_targets)
+        variances = jnp.square(targets) - q_values * rollded_targets
 
         return losses.mean(axis=0).sum(), (td_losses.mean(axis=0), variances.mean(axis=0))
 
@@ -111,22 +109,6 @@ class SharedGIDQN:
         return sample.reward + (1 - sample.is_terminal) * (self.gamma**self.update_horizon) * jnp.max(
             next_q_values, axis=-1
         )
-
-    @partial(jax.jit, static_argnames="self")
-    def shift_params(self, params):
-        # Shift the last weight matrix with shape (last_feature, n_networks x n_actions)
-        params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"] = (
-            params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"]
-            .at[:, : -self.n_actions]
-            .set(params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"][:, self.n_actions :])
-        )
-        # Shift the last bias vector with shape (n_networks x n_actions)
-        params["params"][f"Dense_{self.last_idx_mlp}"]["bias"] = (
-            params["params"][f"Dense_{self.last_idx_mlp}"]["bias"]
-            .at[: -self.n_actions]
-            .set(params["params"][f"Dense_{self.last_idx_mlp}"]["bias"][self.n_actions :])
-        )
-        return params
 
     @partial(jax.jit, static_argnames="self")
     def best_action(self, params: FrozenDict, state: jnp.ndarray, key: jax.Array):
