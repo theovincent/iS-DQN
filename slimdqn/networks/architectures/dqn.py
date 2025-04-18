@@ -32,7 +32,7 @@ class Stack(nn.Module):
 class DQNNet(nn.Module):
     features: Sequence[int]
     architecture_type: str
-    n_actions: int
+    final_feature: int
 
     @nn.compact
     def __call__(self, x):
@@ -67,4 +67,4 @@ class DQNNet(nn.Module):
         for idx_layer in range(idx_feature_start, len(self.features)):
             x = nn.relu((nn.Dense(self.features[idx_layer], kernel_init=initializer)(x)))
 
-        return nn.Dense(self.n_actions, kernel_init=initializer)(x)
+        return nn.Dense(self.final_feature, kernel_init=initializer)(x)

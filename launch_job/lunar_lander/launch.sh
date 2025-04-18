@@ -17,7 +17,7 @@ fi
 SHARED_ARGS="$SHARED_ARGS --features $FEATURE $FEATURE --target_update_frequency $TARGET_UPDATE_FREQ"
 
 # ----- L2 Loss -----
-L2_ARGS="--experiment_name L2_n_net${N_NETWORS}_target_freq${TARGET_UPDATE_FREQ}_sync_freq${TARGET_SYNC_FREQ}"
+L2_ARGS="--experiment_name L2_N${N_NETWORS}_T${TARGET_UPDATE_FREQ}_D${TARGET_SYNC_FREQ}"
 
 launch_job/lunar_lander/${PLATFORM}_dqn.sh --first_seed 6 --last_seed 20 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS
 sleep 40
@@ -31,11 +31,15 @@ launch_job/lunar_lander/${PLATFORM}_agidqn.sh --first_seed 6 --last_seed 20 --n_
 sleep 40
 
 GIDQN_ARGS="--n_networks $N_NETWORS"
-launch_job/lunar_lander/${PLATFORM}_gidqn.sh --first_seed 6 --last_seed 20 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $GIDQN_ARGS
+launch_job/lunar_lander/${PLATFORM}_gidqn.sh --first_seed 1 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $GIDQN_ARGS
+sleep 40
+
+SHAREDGIDQN_ARGS="--n_networks $N_NETWORS"
+launch_job/lunar_lander/${PLATFORM}_sharedgidqn.sh --first_seed 1 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $SHAREDGIDQN_ARGS
 sleep 600
 
 # ----- KL Loss -----
-KL_ARGS="--experiment_name KL_n_net${N_NETWORS}_target_freq${TARGET_UPDATE_FREQ}_sync_freq${TARGET_SYNC_FREQ} \
+KL_ARGS="--experiment_name KL_N${N_NETWORS}_T${TARGET_UPDATE_FREQ}_D${TARGET_SYNC_FREQ} \
     --n_bins 51 --min_value -100 --max_value 100 --sigma 2.94117647"
 
 launch_job/lunar_lander/${PLATFORM}_hldqn.sh --first_seed 6 --last_seed 20 --n_parallel_seeds 1 $SHARED_ARGS $KL_ARGS
