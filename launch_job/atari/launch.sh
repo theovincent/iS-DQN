@@ -32,6 +32,16 @@ sleep 20
 GIDQN_ARGS="--n_networks $N_NETWORS"
 launch_job/atari/${PLATFORM}_gidqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $L2_ARGS $GIDQN_ARGS
 launch_job/atari/${PLATFORM}_gidqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $GIDQN_ARGS
+sleep 20
+
+SHAREDGIDQN_ARGS="--n_networks $N_NETWORS"
+launch_job/atari/${PLATFORM}_sharedgidqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $L2_ARGS $SHAREDGIDQN_ARGS
+launch_job/atari/${PLATFORM}_sharedgidqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $SHAREDGIDQN_ARGS
+sleep 20
+
+CROWNGIDQN_ARGS="--n_networks $N_NETWORS"
+launch_job/atari/${PLATFORM}_crowngidqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $L2_ARGS $CROWNGIDQN_ARGS
+launch_job/atari/${PLATFORM}_crowngidqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $CROWNGIDQN_ARGS
 sleep 40
 
 # ----- KL Loss -----
