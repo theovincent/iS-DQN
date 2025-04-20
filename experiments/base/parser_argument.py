@@ -169,6 +169,16 @@ def add_n_networks(parser: argparse.ArgumentParser):
     )
 
 
+def add_layer_norm(parser: argparse.ArgumentParser):
+    parser.add_argument(
+        "-ln",
+        "--layer_norm",
+        help="Flag to add layer norm for each layer.",
+        default=False,
+        action="store_true",
+    )
+
+
 def add_target_sync_frequency(parser: argparse.ArgumentParser):
     parser.add_argument(
         "-tsf",
@@ -212,6 +222,7 @@ def add_histogram_loss_parameters(parser: argparse.ArgumentParser):
 
 @output_added_arguments
 def add_dqn_arguments(parser: argparse.ArgumentParser):
+    add_layer_norm(parser)
     add_target_update_frequency(parser)
 
 
@@ -237,6 +248,7 @@ def add_gidqn_arguments(parser: argparse.ArgumentParser):
 @output_added_arguments
 def add_sharedgidqn_arguments(parser: argparse.ArgumentParser):
     add_n_networks(parser)
+    add_layer_norm(parser)
     add_target_update_frequency(parser)
 
 

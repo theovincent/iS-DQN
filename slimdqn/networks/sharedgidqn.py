@@ -18,6 +18,7 @@ class SharedGIDQN:
         n_actions,
         n_networks: int,
         features: list,
+        layer_norm: bool,
         architecture_type: str,
         learning_rate: float,
         gamma: float,
@@ -29,7 +30,7 @@ class SharedGIDQN:
         self.n_networks = n_networks
         self.n_actions = n_actions
         self.last_idx_mlp = len(features) if architecture_type == "fc" else len(features) - 3
-        self.network = DQNNet(features, architecture_type, self.n_networks * n_actions)
+        self.network = DQNNet(features, architecture_type, self.n_networks * n_actions, layer_norm)
         self.network.apply_fn = lambda params, state: jnp.squeeze(
             self.network.apply(params, state).reshape((-1, self.n_networks, n_actions))
         )
