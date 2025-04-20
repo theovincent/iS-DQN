@@ -14,7 +14,7 @@ if [ $PLATFORM == "normal/local" ]
 then
     SHARED_ARGS="$SHARED_ARGS --tmux_name slimdqn"
 fi
-if [ $LAYER_NORM == "ln_"]
+if [ $LAYER_NORM == "ln_" ]
 then
     SHARED_ARGS="$SHARED_ARGS --layer_norm"
 fi
