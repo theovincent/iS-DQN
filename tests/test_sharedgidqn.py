@@ -1,5 +1,4 @@
 import unittest
-import numpy as np
 import jax
 import jax.numpy as jnp
 
@@ -30,6 +29,7 @@ class TestSharedGIDQN(unittest.TestCase):
                 jax.random.randint(key_feature_3, (), minval=5, maxval=20),
                 jax.random.randint(key_feature_4, (), minval=5, maxval=20),
             ],
+            True,
             "cnn",
             0.001,
             0.94,

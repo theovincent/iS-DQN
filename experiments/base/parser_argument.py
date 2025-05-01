@@ -227,21 +227,14 @@ def add_dqn_arguments(parser: argparse.ArgumentParser):
 
 
 @output_added_arguments
-def add_idqn_arguments(parser: argparse.ArgumentParser):
-    add_n_networks(parser)
-    add_target_update_frequency(parser)
-    add_target_sync_frequency(parser)
-
-
-@output_added_arguments
-def add_agidqn_arguments(parser: argparse.ArgumentParser):
-    add_n_networks(parser)
+def add_shareddqn_arguments(parser: argparse.ArgumentParser):
+    add_layer_norm(parser)
     add_target_update_frequency(parser)
 
 
 @output_added_arguments
-def add_gidqn_arguments(parser: argparse.ArgumentParser):
-    add_n_networks(parser)
+def add_shareddgdqn_arguments(parser: argparse.ArgumentParser):
+    add_layer_norm(parser)
     add_target_update_frequency(parser)
 
 
@@ -249,12 +242,6 @@ def add_gidqn_arguments(parser: argparse.ArgumentParser):
 def add_sharedgidqn_arguments(parser: argparse.ArgumentParser):
     add_n_networks(parser)
     add_layer_norm(parser)
-    add_target_update_frequency(parser)
-
-
-@output_added_arguments
-def add_crowngidqn_arguments(parser: argparse.ArgumentParser):
-    add_n_networks(parser)
     add_target_update_frequency(parser)
 
 
