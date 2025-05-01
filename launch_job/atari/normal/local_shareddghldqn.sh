@@ -10,7 +10,7 @@ fi
 
 tmux send-keys -t $TMUX_NAME "cd $(pwd)" ENTER
 tmux send-keys -t $TMUX_NAME "source env/bin/activate" ENTER
-FRACTION_GPU=$(echo "scale=2 ; 1 / ($LAST_SEED - $FIRST_SEED + 1)" | bc)
+FRACTION_GPU=$(echo "scale=2 ; 0.98 / ($LAST_SEED - $FIRST_SEED + 1)" | bc)
 tmux send-keys -t $TMUX_NAME "export XLA_PYTHON_CLIENT_MEM_FRACTION=$FRACTION_GPU" ENTER
 
 

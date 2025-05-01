@@ -179,16 +179,6 @@ def add_layer_norm(parser: argparse.ArgumentParser):
     )
 
 
-def add_target_sync_frequency(parser: argparse.ArgumentParser):
-    parser.add_argument(
-        "-tsf",
-        "--target_sync_frequency",
-        help="Number of training steps before updating each target Q-network to its corresponding online Q-network. (D)",
-        type=int,
-        default=10,
-    )
-
-
 def add_histogram_loss_parameters(parser: argparse.ArgumentParser):
     parser.add_argument(
         "-nb",
@@ -252,22 +242,13 @@ def add_hldqn_arguments(parser: argparse.ArgumentParser):
 
 
 @output_added_arguments
-def add_ihldqn_arguments(parser: argparse.ArgumentParser):
-    add_n_networks(parser)
-    add_target_update_frequency(parser)
-    add_target_sync_frequency(parser)
-    add_histogram_loss_parameters(parser)
-
-
-@output_added_arguments
-def add_agihldqn_arguments(parser: argparse.ArgumentParser):
-    add_n_networks(parser)
+def add_shareddghldqn_arguments(parser: argparse.ArgumentParser):
     add_target_update_frequency(parser)
     add_histogram_loss_parameters(parser)
 
 
 @output_added_arguments
-def add_gihldqn_arguments(parser: argparse.ArgumentParser):
+def add_sharedihldqn_arguments(parser: argparse.ArgumentParser):
     add_n_networks(parser)
     add_target_update_frequency(parser)
     add_histogram_loss_parameters(parser)
