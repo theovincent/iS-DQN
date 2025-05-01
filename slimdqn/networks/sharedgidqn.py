@@ -131,10 +131,10 @@ class SharedGIDQN:
 
     @partial(jax.jit, static_argnames="self")
     def best_action(self, params: FrozenDict, state: jnp.ndarray, key: jax.Array):
-        idx_params = jax.random.randint(key, (), 0, self.n_networks)
+        idx_network = jax.random.randint(key, (), 0, self.n_networks)
 
         # computes the best action for a single state
-        return jnp.argmax(self.network.apply_fn(params, state)[idx_params])
+        return jnp.argmax(self.network.apply_fn(params, state)[idx_network])
 
     def get_model(self):
         return {"params": self.params}

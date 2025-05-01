@@ -77,3 +77,16 @@ class TestSharedDQN(unittest.TestCase):
 
         self.assertEqual(q_values.shape, (self.n_actions,))
         self.assertEqual(best_action, computed_best_action)
+
+    def test_shift_params(self):
+        print(f"-------------- Random key {self.random_seed} --------------")
+        state = self.generator.state(self.key)
+        self.q.params["params"][f"Dense_{self.q.last_idx_mlp}"]["bias"] = jnp.arange(2 * self.n_actions) / 100
+
+        # shape (n_networks, n_actions)
+        q_values = self.q.network.apply_fn(self.q.params, state)
+        self.q.params = self.q.shift_params(self.q.params)
+        shifted_q_values = self.q.network.apply_fn(self.q.params, state)
+
+        self.assertEqual(jnp.linalg.norm(shifted_q_values[:-1] - q_values[1:]), 0)
+        self.assertEqual(jnp.linalg.norm(shifted_q_values[-1] - shifted_q_values[-1]), 0)

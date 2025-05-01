@@ -74,8 +74,8 @@ class TestSharedGIDQN(unittest.TestCase):
 
         computed_best_action = self.q.best_action(self.q.params, state, self.key)
 
-        idx_params = jax.random.randint(self.key, (), 0, self.n_networks)
-        q_values = self.q.network.apply_fn(self.q.params, state)[idx_params]
+        idx_network = jax.random.randint(self.key, (), 0, self.n_networks)
+        q_values = self.q.network.apply_fn(self.q.params, state)[idx_network]
         best_action = jnp.argmax(q_values)
 
         self.assertEqual(q_values.shape, (self.n_actions,))
