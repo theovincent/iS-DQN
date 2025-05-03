@@ -55,7 +55,7 @@ class iSDQN:
             self.params, self.optimizer_state, losses = self.learn_on_batch(
                 self.params, self.optimizer_state, batch_samples
             )
-            self.cumulated_loss += losses
+            self.cumulated_losses += losses
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
