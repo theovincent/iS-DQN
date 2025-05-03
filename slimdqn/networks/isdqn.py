@@ -111,23 +111,17 @@ class iSDQN:
     def shift_params(self, params):
         # Shift the last weight matrix with shape (last_feature, 2 x n_bellman_iterations x n_actions)
         # Reminder: 2 * self.n_bellman_iterations = [\bar{Q_0}, ..., \bar{Q_K-1}, Q_1, ..., Q_K]
-        # Here we shifting: \bar{Q_i} <- \bar{Q_i+1} and Q_i <- Q_i+1
+        # Here we shifting: \bar{Q_i} <- Q_i+1
         kernel = params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"]
-        kernel = kernel.at[:, : (self.n_bellman_iterations - 1) * self.n_actions].set(
-            kernel[:, self.n_actions : self.n_bellman_iterations * self.n_actions]
-        )
         params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"] = kernel.at[
-            :, self.n_bellman_iterations * self.n_actions : -self.n_actions
-        ].set(kernel[:, (self.n_bellman_iterations + 1) * self.n_actions :])
+            :, : self.n_bellman_iterations * self.n_actions
+        ].set(kernel[:, self.n_bellman_iterations * self.n_actions :])
 
         # Shift the last bias vector with shape (2 x n_bellman_iterations x n_actions)
         bias = params["params"][f"Dense_{self.last_idx_mlp}"]["bias"]
-        bias = bias.at[: (self.n_bellman_iterations - 1) * self.n_actions].set(
-            bias[self.n_actions : self.n_bellman_iterations * self.n_actions]
-        )
         params["params"][f"Dense_{self.last_idx_mlp}"]["bias"] = bias.at[
-            self.n_bellman_iterations * self.n_actions : -self.n_actions
-        ].set(bias[(self.n_bellman_iterations + 1) * self.n_actions :])
+            : self.n_bellman_iterations * self.n_actions
+        ].set(bias[self.n_bellman_iterations * self.n_actions :])
 
         return params
 

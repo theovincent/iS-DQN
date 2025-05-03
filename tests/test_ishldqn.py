@@ -109,33 +109,16 @@ class TestiSHLDQN(unittest.TestCase):
         self.q.params = self.q.shift_params(self.q.params)
         shifted_q_values = self.q.network.apply_fn(self.q.params, state)
 
-        # The target networks are equal
+        # The target networks are equal to the online networks
         self.assertEqual(
-            jnp.linalg.norm(
-                shifted_q_values[: self.n_bellman_iterations - 1] - q_values[1 : self.n_bellman_iterations]
-            ),
+            jnp.linalg.norm(shifted_q_values[: self.n_bellman_iterations] - q_values[self.n_bellman_iterations :]),
             0,
         )
-        # The online networks are equal
+        # The online networks have not changed
         self.assertEqual(
-            jnp.linalg.norm(
-                shifted_q_values[self.n_bellman_iterations : -1] - q_values[self.n_bellman_iterations + 1 :]
-            ),
+            jnp.linalg.norm(shifted_q_values[self.n_bellman_iterations :] - q_values[self.n_bellman_iterations :]),
             0,
         )
-        if self.n_bellman_iterations > 1:
-            # The last 2 target networks are repeated
-            self.assertEqual(
-                jnp.linalg.norm(
-                    shifted_q_values[self.n_bellman_iterations - 2] - shifted_q_values[self.n_bellman_iterations - 1]
-                ),
-                0,
-            )
-            # The last 2 online networks are repeated
-            self.assertEqual(
-                jnp.linalg.norm(shifted_q_values[-2] - shifted_q_values[-1]),
-                0,
-            )
 
     def test_sync_params(self):
         print(f"-------------- Random key {self.random_seed} --------------")
@@ -170,8 +153,6 @@ class TestiSHLDQN(unittest.TestCase):
 
             # The online networks have not changed values.
             self.assertEqual(
-                jnp.linalg.norm(
-                    sync_q_values[self.n_bellman_iterations : -1] - q_values[self.n_bellman_iterations : -1]
-                ),
+                jnp.linalg.norm(sync_q_values[self.n_bellman_iterations :] - q_values[self.n_bellman_iterations :]),
                 0,
             )
