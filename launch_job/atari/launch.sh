@@ -9,7 +9,7 @@ ARCHITECTURE_TYPE="cnn"  # cnn impala
 TARGET_UPDATE_FREQ=8000
 TARGET_SYNC_FREQ=30
 
-PLATFORM="normal/local"  # nhrfau/cluster normal/cluster normal/local
+PLATFORM="normal/cluster"  # nhrfau/cluster normal/cluster normal/local
 
 if [ $PLATFORM == "normal/local" ]
 then
@@ -29,7 +29,7 @@ DQN_ARGS="--experiment_name L2_LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UP
 # launch_job/atari/${PLATFORM}_dqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $L2_ARGS $DQN_ARGS
 # launch_job/atari/${PLATFORM}_dqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $DQN_ARGS
 
-ISDQN_ARGS="--experiment_name L2_K${N_NETWORS}_LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}_D${TARGET_SYNC_FREQ}_${GAME} \
+ISDQN_ARGS="--experiment_name L2_K${N_BELLMAN_ITERATIONS}_LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}_D${TARGET_SYNC_FREQ}_${GAME} \
     --n_bellman_iterations $N_BELLMAN_ITERATIONS"
 # launch_job/atari/${PLATFORM}_isdqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $L2_ARGS $ISDQN_ARGS
 # launch_job/atari/${PLATFORM}_isdqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $ISDQN_ARGS
@@ -41,7 +41,7 @@ HLDQN_ARGS="--experiment_name HL_LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_
 # launch_job/atari/${PLATFORM}_hldqn.sh --first_seed 1 --last_seed 3 --n_parallel_seeds 1 $SHARED_ARGS $HL_ARGS $HLDQN_ARGS
 # launch_job/atari/${PLATFORM}_hldqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $HL_ARGS $HLDQN_ARGS 
 
-ISHLDQN_ARGS="--experiment_name HL_K${N_NETWORS}_LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}_D${TARGET_SYNC_FREQ}_${GAME} \
+ISHLDQN_ARGS="--experiment_name HL_K${N_BELLMAN_ITERATIONS}_LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}_D${TARGET_SYNC_FREQ}_${GAME} \
     --n_bellman_iterations $N_BELLMAN_ITERATIONS"
 # launch_job/atari/${PLATFORM}_ishldqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $HL_ARGS $ISHLDQN_ARGS
 # launch_job/atari/${PLATFORM}_ishldqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $HL_ARGS $ISHLDQN_ARGS
