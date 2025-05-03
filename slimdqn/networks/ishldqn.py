@@ -11,13 +11,13 @@ from slimdqn.networks.architectures.dqn import DQNNet
 from slimdqn.sample_collection.replay_buffer import ReplayBuffer, ReplayElement
 
 
-class SharediHLDQN:
+class iSHLDQN:
     def __init__(
         self,
         key: jax.random.PRNGKey,
         observation_dim,
         n_actions,
-        n_networks: int,
+        n_bellman_iterations: int,
         n_bins: int,
         features: list,
         layer_norm: bool,
@@ -27,18 +27,22 @@ class SharediHLDQN:
         update_horizon: int,
         data_to_update: int,
         target_update_frequency: int,
+        target_sync_frequency: int,
         min_value: float,
         max_value: float,
         sigma: float,
         adam_eps: float = 1e-8,
     ):
-        self.n_networks = n_networks
+        self.n_bellman_iterations = n_bellman_iterations
         self.n_actions = n_actions
         self.n_bins = n_bins
         self.last_idx_mlp = len(features) if architecture_type == "fc" else len(features) - 3
-        self.network = DQNNet(features, architecture_type, n_networks * n_actions * self.n_bins, layer_norm)
+        self.network = DQNNet(
+            features, architecture_type, 2 * self.n_bellman_iterations * n_actions * self.n_bins, layer_norm
+        )
+        # 2 * self.n_bellman_iterations = [\bar{Q_0}, ..., \bar{Q_K-1}, Q_1, ..., Q_K]
         self.network.apply_fn = lambda params, state: jnp.squeeze(
-            self.network.apply(params, state).reshape((-1, n_networks, n_actions, self.n_bins))
+            self.network.apply(params, state).reshape((-1, 2 * self.n_bellman_iterations, n_actions, self.n_bins))
         )
         self.params = self.network.init(key, jnp.zeros(observation_dim, dtype=jnp.float32))
 
@@ -49,9 +53,9 @@ class SharediHLDQN:
         self.update_horizon = update_horizon
         self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
-        self.cumulated_losses = np.zeros(self.n_networks)
-        self.cumulated_unsupported_probs = np.zeros(self.n_networks)
-        self.cumulated_entropies = np.zeros(self.n_networks)
+        self.target_sync_frequency = target_sync_frequency
+        self.cumulated_losses = np.zeros(self.n_bellman_iterations)
+        self.cumulated_unsupported_probs = np.zeros(self.n_bellman_iterations)
         self.support = jnp.linspace(min_value, max_value, self.n_bins + 1, dtype=jnp.float32)
         self.bin_centers = (self.support[:-1] + self.support[1:]) / 2
         self.clip_target = lambda target: jnp.clip(target, min_value, max_value)
@@ -61,12 +65,11 @@ class SharediHLDQN:
         if step % self.data_to_update == 0:
             batch_samples = replay_buffer.sample()
 
-            self.params, self.optimizer_state, losses, unsupported_probs, entropies = self.learn_on_batch(
+            self.params, self.optimizer_state, losses, unsupported_probs = self.learn_on_batch(
                 self.params, self.optimizer_state, batch_samples
             )
             self.cumulated_losses += losses
             self.cumulated_unsupported_probs += unsupported_probs
-            self.cumulated_entropies += entropies
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
@@ -75,53 +78,49 @@ class SharediHLDQN:
 
             logs = {
                 "loss": self.cumulated_losses.mean() / (self.target_update_frequency / self.data_to_update),
-                "entropy": self.cumulated_entropies.mean() / (self.target_update_frequency / self.data_to_update),
             }
-            for idx_network in range(self.n_networks):
+            for idx_network in range(min(self.n_bellman_iterations, 5)):
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
                     self.target_update_frequency / self.data_to_update
                 )
                 logs[f"networks/{idx_network}_unsupported_prob"] = self.cumulated_unsupported_probs[idx_network] / (
                     self.target_update_frequency / self.data_to_update
                 )
-                logs[f"networks/{idx_network}_entropy"] = self.cumulated_entropies[idx_network] / (
-                    self.target_update_frequency / self.data_to_update
-                )
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
             self.cumulated_unsupported_probs = np.zeros_like(self.cumulated_unsupported_probs)
-            self.cumulated_entropies = np.zeros_like(self.cumulated_entropies)
 
             return True, logs
+
+        if step % self.target_sync_frequency == 0:
+            self.target_params = self.sync_target_params(self.params)
 
         return False, {}
 
     @partial(jax.jit, static_argnames="self")
     def learn_on_batch(self, params: FrozenDict, optimizer_state, batch_samples):
-        grad_loss, (losses, unsupported_probs, entropies) = jax.grad(self.loss_on_batch, has_aux=True)(
-            params, batch_samples
-        )
+        grad_loss, (losses, unsupported_probs) = jax.grad(self.loss_on_batch, has_aux=True)(params, batch_samples)
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
 
-        return params, optimizer_state, losses, unsupported_probs, entropies
+        return params, optimizer_state, losses, unsupported_probs
 
     def loss_on_batch(self, params: FrozenDict, samples):
         batch_size = samples.state.shape[0]
-        # shape (2 * batch_size, n_networks, n_actions, n_bins)
+        # shape (2 * batch_size, 2 * n_bellman_iterations, n_actions, n_bins)
         all_q_logits = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
-        # shape (batch_size, n_networks - 1, n_bins)
-        q_logits = jax.vmap(lambda q_value, action: q_value[:, action])(all_q_logits[:batch_size, 1:], samples.action)
-        # shape (batch_size, n_networks - 1)
-        targets = jax.vmap(self.compute_target)(samples, all_q_logits[batch_size:, :-1])
-        # shape (batch_size, n_networks - 1, n_bins) | (batch_size, n_networks - 1)
+        # shape (batch_size, n_bellman_iterations, n_bins)
+        q_logits = jax.vmap(lambda q_value, action: q_value[:, action])(
+            all_q_logits[:batch_size, self.n_bellman_iterations :], samples.action
+        )
+        # shape (batch_size, n_bellman_iterations)
+        targets = jax.vmap(self.compute_target)(samples, all_q_logits[batch_size:, : -self.n_bellman_iterations])
+        # shape (batch_size, n_bellman_iterations, n_bins) | (batch_size, n_bellman_iterations)
         projected_targets, unsupported_probs = jax.vmap(jax.vmap(self.project_target_on_support))(targets)
         stop_grad_projected_targets = jax.lax.stop_gradient(projected_targets)
 
-        # shape (batch_size, n_networks - 1)
+        # shape (batch_size, n_bellman_iterations)
         cross_entropies = optax.softmax_cross_entropy(q_logits, stop_grad_projected_targets)
-        entropies = -jnp.sum(projected_targets * jnp.log(projected_targets), axis=-1)
-
-        return cross_entropies.mean(axis=0).sum(), (unsupported_probs.mean(axis=0), entropies.mean(axis=0))
+        return cross_entropies.mean(axis=0).sum(), (cross_entropies.mean(axis=0), unsupported_probs.mean(axis=0))
 
     def compute_target(self, sample: ReplayElement, next_q_logits: jax.Array):
         # computes the target value for single sample
@@ -144,30 +143,56 @@ class SharediHLDQN:
 
     @partial(jax.jit, static_argnames="self")
     def shift_params(self, params):
-        # Shift the last weight matrix with shape (last_feature, n_networks x n_actions)
-        params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"] = (
-            params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"]
-            .at[:, : -self.n_actions * self.n_bins]
-            .set(params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"][:, self.n_actions * self.n_bins :])
+        # Shift the last weight matrix with shape (last_feature, 2 x n_bellman_iterations x n_actions)
+        # Reminder: 2 * self.n_bellman_iterations = [\bar{Q_0}, ..., \bar{Q_K-1}, Q_1, ..., Q_K]
+        # Here we shifting: \bar{Q_i} <- \bar{Q_i+1} and Q_i <- Q_i+1
+        kernel = params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"]
+        kernel = kernel.at[:, : (self.n_bellman_iterations - 1) * self.n_actions * self.n_bins].set(
+            kernel[:, self.n_actions * self.n_bins : self.n_bellman_iterations * self.n_actions * self.n_bins]
         )
-        # Shift the last bias vector with shape (n_networks x n_actions)
-        params["params"][f"Dense_{self.last_idx_mlp}"]["bias"] = (
-            params["params"][f"Dense_{self.last_idx_mlp}"]["bias"]
-            .at[: -self.n_actions * self.n_bins]
-            .set(params["params"][f"Dense_{self.last_idx_mlp}"]["bias"][self.n_actions * self.n_bins :])
+        params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"] = kernel.at[
+            :, self.n_bellman_iterations * self.n_actions * self.n_bins : -self.n_actions * self.n_bins
+        ].set(kernel[:, (self.n_bellman_iterations + 1) * self.n_actions * self.n_bins :])
+
+        # Shift the last bias vector with shape (2 x n_bellman_iterations x n_actions)
+        bias = params["params"][f"Dense_{self.last_idx_mlp}"]["bias"]
+        bias = bias.at[: (self.n_bellman_iterations - 1) * self.n_actions * self.n_bins].set(
+            bias[self.n_actions * self.n_bins : self.n_bellman_iterations * self.n_actions * self.n_bins]
         )
+        params["params"][f"Dense_{self.last_idx_mlp}"]["bias"] = bias.at[
+            self.n_bellman_iterations * self.n_actions * self.n_bins : -self.n_actions * self.n_bins
+        ].set(bias[(self.n_bellman_iterations + 1) * self.n_actions * self.n_bins :])
+
+        return params
+
+    @partial(jax.jit, static_argnames="self")
+    def sync_target_params(self, params):
+        # Synchronize the last weight matrix with shape (last_feature, 2 x n_bellman_iterations x n_actions)
+        # Reminder: 2 * self.n_bellman_iterations = [\bar{Q_0}, ..., \bar{Q_K-1}, Q_1, ..., Q_K]
+        # Here we synchronize: \bar{Q_i} <- Q_i
+        kernel = params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"]
+        params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"] = kernel.at[
+            :, self.n_actions * self.n_bins : self.n_bellman_iterations * self.n_actions * self.n_bins
+        ].set(kernel[:, self.n_bellman_iterations * self.n_actions * self.n_bins : -self.n_actions * self.n_bins])
+
+        # Synchronize the last bias vector with shape (2 x n_bellman_iterations x n_actions)
+        bias = params["params"][f"Dense_{self.last_idx_mlp}"]["bias"]
+        params["params"][f"Dense_{self.last_idx_mlp}"]["bias"] = bias.at[
+            self.n_actions * self.n_bins : self.n_bellman_iterations * self.n_actions * self.n_bins
+        ].set(bias[self.n_bellman_iterations * self.n_actions * self.n_bins : -self.n_actions * self.n_bins])
+
         return params
 
     @partial(jax.jit, static_argnames="self")
     def best_action(self, params: FrozenDict, state: jnp.ndarray, key: jax.Array):
-        idx_network = jax.random.randint(key, (), 0, self.n_networks)
-        # shape (n_actions, n_bins)
-        q_logits = self.network.apply_fn(params, state)[idx_network]
+        idx_network = jax.random.randint(key, (), 0, self.n_bellman_iterations)
+        # shape (2 * n_bellman_iterations, n_actions, n_bins)
+        q_logits = self.network.apply_fn(params, state)
 
         # computes the best action for a single state
         # We first compute the probabilities by applying the softmax on the last axis (bin axis).
         # Then, we compute the expectation by multiplying with the bin centers.
-        return jnp.argmax(jax.nn.softmax(q_logits) @ self.bin_centers)
+        return jnp.argmax(jax.nn.softmax(q_logits[self.n_bellman_iterations + idx_network]) @ self.bin_centers)
 
     def get_model(self):
         return {"params": self.params}

@@ -7,7 +7,7 @@ import numpy as np
 from experiments.base.dqn import train
 from experiments.base.utils import prepare_logs
 from slimdqn.environments.atari import AtariEnv
-from slimdqn.networks.shareddgdqn import SharedDGDQN
+from slimdqn.networks.isdqn import iSDQN
 from slimdqn.sample_collection.replay_buffer import ReplayBuffer
 from slimdqn.sample_collection.samplers import UniformSamplingDistribution
 
@@ -29,10 +29,11 @@ def run(argvs=sys.argv[1:]):
         stack_size=4,
         compress=True,
     )
-    agent = SharedDGDQN(
+    agent = iSDQN(
         q_key,
         (env.state_height, env.state_width, env.n_stacked_frames),
         env.n_actions,
+        n_bellman_iterations=p["n_bellman_iterations"],
         features=p["features"],
         layer_norm=p["layer_norm"],
         architecture_type=p["architecture_type"],
@@ -41,6 +42,7 @@ def run(argvs=sys.argv[1:]):
         update_horizon=p["update_horizon"],
         data_to_update=p["data_to_update"],
         target_update_frequency=p["target_update_frequency"],
+        target_sync_frequency=p["target_sync_frequency"],
         adam_eps=1.5e-4,
     )
     train(train_key, p, agent, env, rb)

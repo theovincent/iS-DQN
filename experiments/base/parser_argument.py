@@ -149,21 +149,11 @@ def add_base_arguments(parser: argparse.ArgumentParser):
     )
 
 
-def add_target_update_frequency(parser: argparse.ArgumentParser):
+def add_n_bellman_iterations(parser: argparse.ArgumentParser):
     parser.add_argument(
-        "-tuf",
-        "--target_update_frequency",
-        help="Number of training steps before updating the target Q-network. (T)",
-        type=int,
-        default=200,
-    )
-
-
-def add_n_networks(parser: argparse.ArgumentParser):
-    parser.add_argument(
-        "-nn",
-        "--n_networks",
-        help="Number of online networks to trainin in parallel. (K)",
+        "-nbi",
+        "--n_bellman_iterations",
+        help="Number of bellman iterations to train in parallel. (K)",
         type=int,
         default=3,
     )
@@ -176,6 +166,26 @@ def add_layer_norm(parser: argparse.ArgumentParser):
         help="Flag to add layer norm for each layer.",
         default=False,
         action="store_true",
+    )
+
+
+def add_target_update_frequency(parser: argparse.ArgumentParser):
+    parser.add_argument(
+        "-tuf",
+        "--target_update_frequency",
+        help="Number of training steps before updating the target Q-network. (T)",
+        type=int,
+        default=200,
+    )
+
+
+def add_target_sync_frequency(parser: argparse.ArgumentParser):
+    parser.add_argument(
+        "-tcf",
+        "--target_sync_frequency",
+        help="Number of training steps before synchronizing each target Q-network to their online counterpart. (D)",
+        type=int,
+        default=5,
     )
 
 
@@ -217,38 +227,23 @@ def add_dqn_arguments(parser: argparse.ArgumentParser):
 
 
 @output_added_arguments
-def add_shareddqn_arguments(parser: argparse.ArgumentParser):
+def add_isdqn_arguments(parser: argparse.ArgumentParser):
+    add_n_bellman_iterations(parser)
     add_layer_norm(parser)
     add_target_update_frequency(parser)
-
-
-@output_added_arguments
-def add_shareddgdqn_arguments(parser: argparse.ArgumentParser):
-    add_layer_norm(parser)
-    add_target_update_frequency(parser)
-
-
-@output_added_arguments
-def add_sharedgidqn_arguments(parser: argparse.ArgumentParser):
-    add_n_networks(parser)
-    add_layer_norm(parser)
-    add_target_update_frequency(parser)
+    add_target_sync_frequency(parser)
 
 
 @output_added_arguments
 def add_hldqn_arguments(parser: argparse.ArgumentParser):
+    add_layer_norm(parser)
     add_target_update_frequency(parser)
     add_histogram_loss_parameters(parser)
 
 
 @output_added_arguments
-def add_shareddghldqn_arguments(parser: argparse.ArgumentParser):
+def add_ishldqn_arguments(parser: argparse.ArgumentParser):
+    add_layer_norm(parser)
     add_target_update_frequency(parser)
-    add_histogram_loss_parameters(parser)
-
-
-@output_added_arguments
-def add_sharedihldqn_arguments(parser: argparse.ArgumentParser):
-    add_n_networks(parser)
-    add_target_update_frequency(parser)
+    add_target_sync_frequency(parser)
     add_histogram_loss_parameters(parser)
