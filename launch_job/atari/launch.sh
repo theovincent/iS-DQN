@@ -4,7 +4,7 @@ SHARED_ARGS="--features 32 64 64 512 --replay_buffer_capacity 1_000_000 --batch_
 
 GAME="Assault"
 N_BELLMAN_ITERATIONS=1  # 1 3 5 10
-LAYER_NORM=True
+LAYER_NORM=1  # 0 1
 ARCHITECTURE_TYPE="cnn"  # cnn impala
 TARGET_UPDATE_FREQ=8000
 TARGET_SYNC_FREQ=30
@@ -15,7 +15,7 @@ if [ $PLATFORM == "normal/local" ]
 then
     SHARED_ARGS="$SHARED_ARGS --tmux_name slimdqn"
 fi
-if [ $LAYER_NORM == "ln_" ]
+if [ $LAYER_NORM == 1 ]
 then
     SHARED_ARGS="$SHARED_ARGS --layer_norm"
 fi
