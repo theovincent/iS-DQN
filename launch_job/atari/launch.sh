@@ -30,7 +30,7 @@ DQN_ARGS="--experiment_name L2_LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UP
 # launch_job/atari/${PLATFORM}_dqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $DQN_ARGS
 
 ISDQN_ARGS="--experiment_name L2_K${N_BELLMAN_ITERATIONS}_LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}_D${TARGET_SYNC_FREQ}_${GAME} \
-    --n_bellman_iterations $N_BELLMAN_ITERATIONS"
+    --n_bellman_iterations $N_BELLMAN_ITERATIONS --target_sync_frequency $TARGET_SYNC_FREQ"
 # launch_job/atari/${PLATFORM}_isdqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $L2_ARGS $ISDQN_ARGS
 # launch_job/atari/${PLATFORM}_isdqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $ISDQN_ARGS
 
@@ -42,6 +42,6 @@ HLDQN_ARGS="--experiment_name HL_LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_
 # launch_job/atari/${PLATFORM}_hldqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $HL_ARGS $HLDQN_ARGS 
 
 ISHLDQN_ARGS="--experiment_name HL_K${N_BELLMAN_ITERATIONS}_LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}_D${TARGET_SYNC_FREQ}_${GAME} \
-    --n_bellman_iterations $N_BELLMAN_ITERATIONS"
+    --n_bellman_iterations $N_BELLMAN_ITERATIONS --target_sync_frequency $TARGET_SYNC_FREQ"
 # launch_job/atari/${PLATFORM}_ishldqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $HL_ARGS $ISHLDQN_ARGS
 # launch_job/atari/${PLATFORM}_ishldqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $HL_ARGS $ISHLDQN_ARGS
