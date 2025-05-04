@@ -54,7 +54,7 @@ class ExpiSDQN:
         self.target_sync_frequency = target_sync_frequency
         self.cumulated_losses = np.zeros(self.n_bellman_iterations)
         self.cumulated_targets_change = np.zeros(self.n_bellman_iterations)
-        self.cumulated_features_change = np.zeros(self.n_bellman_iterations)
+        self.cumulated_features_change = 0
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
         if step % self.data_to_update == 0:
@@ -75,6 +75,8 @@ class ExpiSDQN:
 
             logs = {
                 "loss": np.mean(self.cumulated_losses) / (self.target_update_frequency / self.data_to_update),
+                "networks/feature_change": self.cumulated_features_change
+                / (self.target_update_frequency / self.data_to_update),
             }
             for idx_network in range(min(self.n_bellman_iterations, 5)):
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
@@ -83,12 +85,9 @@ class ExpiSDQN:
                 logs[f"networks/{idx_network}_target_change"] = self.cumulated_targets_change[idx_network] / (
                     self.target_update_frequency / self.data_to_update
                 )
-                logs[f"networks/{idx_network}_feature_change"] = self.cumulated_features_change[idx_network] / (
-                    self.target_update_frequency / self.data_to_update
-                )
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
             self.cumulated_targets_change = np.zeros_like(self.cumulated_targets_change)
-            self.cumulated_features_change = np.zeros_like(self.cumulated_features_change)
+            self.cumulated_features_change = 0
 
             return True, logs
 
@@ -123,10 +122,8 @@ class ExpiSDQN:
         # shape (batch_size, n_bellman_iterations)
         td_losses = jnp.square(q_values - stop_grad_targets)
 
-        frozen_next_q_values, frozen_last_features = self.network.apply_fn(params_target, samples.next_state)[
-            :, : self.n_bellman_iterations
-        ]
-        frozen_targets = jax.vmap(self.compute_target)(samples, frozen_next_q_values)
+        frozen_next_q_values, frozen_last_features = self.network.apply_fn(params_target, samples.next_state)
+        frozen_targets = jax.vmap(self.compute_target)(samples, frozen_next_q_values[:, : self.n_bellman_iterations])
         targets_change = (targets - frozen_targets) / (frozen_targets + 1e-9)
         features_change = jnp.linalg.norm((last_features - frozen_last_features), axis=-1) / (
             jnp.linalg(frozen_last_features, axis=-1) + 1e-9
@@ -135,7 +132,7 @@ class ExpiSDQN:
         return td_losses.mean(axis=0).sum(), (
             td_losses.mean(axis=0),
             targets_change.mean(axis=0),
-            features_change.mean(axis=0),
+            features_change.mean(),
         )
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
