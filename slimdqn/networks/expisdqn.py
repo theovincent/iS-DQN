@@ -49,16 +49,18 @@ class ExpiSDQN:
         self.target_sync_frequency = target_sync_frequency
         self.cumulated_losses = np.zeros(self.n_bellman_iterations)
         self.cumulated_targets_change = np.zeros(self.n_bellman_iterations)
+        self.cumulated_losses_change = np.zeros(self.n_bellman_iterations)
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
         if step % self.data_to_update == 0:
             batch_samples = replay_buffer.sample()
 
-            self.params, self.optimizer_state, losses, targets_change = self.learn_on_batch(
+            self.params, self.optimizer_state, losses, targets_change, losses_change = self.learn_on_batch(
                 self.params, self.target_params, self.optimizer_state, batch_samples
             )
             self.cumulated_losses += losses
             self.cumulated_targets_change += targets_change
+            self.cumulated_losses_change += losses_change
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
@@ -76,8 +78,12 @@ class ExpiSDQN:
                 logs[f"networks/{idx_network}_target_change"] = self.cumulated_targets_change / (
                     self.target_update_frequency / self.data_to_update
                 )
+                logs[f"networks/{idx_network}_losses_change"] = self.cumulated_losses_change / (
+                    self.target_update_frequency / self.data_to_update
+                )
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
             self.cumulated_targets_change = np.zeros_like(self.cumulated_targets_change)
+            self.cumulated_losses_change = np.zeros_like(self.cumulated_losses_change)
 
             return True, logs
 
@@ -88,13 +94,13 @@ class ExpiSDQN:
 
     @partial(jax.jit, static_argnames="self")
     def learn_on_batch(self, params: FrozenDict, params_target: FrozenDict, optimizer_state, batch_samples):
-        grad_loss, (losses, targets_change) = jax.grad(self.loss_on_batch, has_aux=True)(
+        grad_loss, (losses, targets_change, losses_change) = jax.grad(self.loss_on_batch, has_aux=True)(
             params, params_target, batch_samples
         )
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
 
-        return params, optimizer_state, losses, targets_change
+        return params, optimizer_state, losses, targets_change, losses_change
 
     def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
         batch_size = samples.state.shape[0]
@@ -107,14 +113,20 @@ class ExpiSDQN:
         targets = jax.vmap(self.compute_target)(samples, all_q_values[batch_size:, : self.n_bellman_iterations])
         stop_grad_targets = jax.lax.stop_gradient(targets)
 
+        # shape (batch_size, n_bellman_iterations)
+        td_losses = jnp.square(q_values - stop_grad_targets)
+
         frozen_targets = jax.vmap(self.compute_target)(
             samples, self.network.apply_fn(params_target, samples.next_state)[:, : self.n_bellman_iterations]
         )
+        frozen_td_losses = jnp.square(q_values - frozen_targets)
         targets_change = (targets - frozen_targets) / (frozen_targets + 1e-9)
-
-        # shape (batch_size, n_bellman_iterations)
-        td_losses = jnp.square(q_values - stop_grad_targets)
-        return td_losses.mean(axis=0).sum(), (td_losses.mean(axis=0), targets_change.mean(axis=0))
+        td_losses_change = (td_losses - frozen_td_losses) / (frozen_td_losses + 1e-9)
+        return td_losses.mean(axis=0).sum(), (
+            td_losses.mean(axis=0),
+            targets_change.mean(axis=0),
+            td_losses_change.mean(axis=0),
+        )
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
         # shape of next_q_values (n_bellman_iterations, next_states, n_actions)
