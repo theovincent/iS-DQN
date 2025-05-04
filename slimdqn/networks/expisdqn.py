@@ -114,7 +114,7 @@ class ExpiSDQN:
 
         # shape (batch_size, n_bellman_iterations)
         td_losses = jnp.square(q_values - stop_grad_targets)
-        return td_losses.mean(axis=0).sum(), td_losses.mean(axis=0), targets_change.mean(axis=0)
+        return td_losses.mean(axis=0).sum(), (td_losses.mean(axis=0), targets_change.mean(axis=0))
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
         # shape of next_q_values (n_bellman_iterations, next_states, n_actions)
