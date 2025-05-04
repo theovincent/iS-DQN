@@ -6,7 +6,7 @@ import numpy as np
 import optax
 from flax.core import FrozenDict
 
-from slimdqn.networks.architectures.dqn import DQNNet
+from slimdqn.networks.architectures.expdqn import ExpDQNNet
 from slimdqn.sample_collection.replay_buffer import ReplayBuffer, ReplayElement
 
 
@@ -31,11 +31,16 @@ class ExpiSDQN:
         self.n_bellman_iterations = n_bellman_iterations
         self.n_actions = n_actions
         self.last_idx_mlp = len(features) if architecture_type == "fc" else len(features) - 3
-        self.network = DQNNet(features, architecture_type, 2 * self.n_bellman_iterations * n_actions, layer_norm)
+        self.network = ExpDQNNet(features, architecture_type, 2 * self.n_bellman_iterations * n_actions, layer_norm)
+
         # 2 * self.n_bellman_iterations = [\bar{Q_0}, ..., \bar{Q_K-1}, Q_1, ..., Q_K]
-        self.network.apply_fn = lambda params, state: jnp.squeeze(
-            self.network.apply(params, state).reshape((-1, 2 * self.n_bellman_iterations, n_actions))
-        )
+        def apply_fn(params, state):
+            predictions, last_features = self.network.apply(params, state)
+            return jnp.squeeze(predictions.reshape((-1, 2 * self.n_bellman_iterations, n_actions))), jnp.squeeze(
+                last_features.reshape((-1, 2 * self.n_bellman_iterations, features[-1]))
+            )
+
+        self.network.apply_fn = apply_fn
         self.params = self.network.init(key, jnp.zeros(observation_dim, dtype=jnp.float32))
 
         self.optimizer = optax.adam(learning_rate, eps=adam_eps)
@@ -49,16 +54,18 @@ class ExpiSDQN:
         self.target_sync_frequency = target_sync_frequency
         self.cumulated_losses = np.zeros(self.n_bellman_iterations)
         self.cumulated_targets_change = np.zeros(self.n_bellman_iterations)
+        self.cumulated_features_change = np.zeros(self.n_bellman_iterations)
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
         if step % self.data_to_update == 0:
             batch_samples = replay_buffer.sample()
 
-            self.params, self.optimizer_state, losses, targets_change = self.learn_on_batch(
+            self.params, self.optimizer_state, losses, targets_change, features_change = self.learn_on_batch(
                 self.params, self.target_params, self.optimizer_state, batch_samples
             )
             self.cumulated_losses += losses
             self.cumulated_targets_change += targets_change
+            self.cumulated_features_change += features_change
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
@@ -73,11 +80,15 @@ class ExpiSDQN:
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
                     self.target_update_frequency / self.data_to_update
                 )
-                logs[f"networks/{idx_network}_target_change"] = self.cumulated_targets_change / (
+                logs[f"networks/{idx_network}_target_change"] = self.cumulated_targets_change[idx_network] / (
+                    self.target_update_frequency / self.data_to_update
+                )
+                logs[f"networks/{idx_network}_feature_change"] = self.cumulated_features_change[idx_network] / (
                     self.target_update_frequency / self.data_to_update
                 )
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
             self.cumulated_targets_change = np.zeros_like(self.cumulated_targets_change)
+            self.cumulated_features_change = np.zeros_like(self.cumulated_features_change)
 
             return True, logs
 
@@ -88,18 +99,20 @@ class ExpiSDQN:
 
     @partial(jax.jit, static_argnames="self")
     def learn_on_batch(self, params: FrozenDict, params_target: FrozenDict, optimizer_state, batch_samples):
-        grad_loss, (losses, targets_change) = jax.grad(self.loss_on_batch, has_aux=True)(
+        grad_loss, (losses, targets_change, features_change) = jax.grad(self.loss_on_batch, has_aux=True)(
             params, params_target, batch_samples
         )
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
 
-        return params, optimizer_state, losses, targets_change
+        return params, optimizer_state, losses, targets_change, features_change
 
     def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
         batch_size = samples.state.shape[0]
         # shape (2 * batch_size, 2 * n_bellman_iterations, n_actions)
-        all_q_values = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
+        all_q_values, last_features = self.network.apply_fn(
+            params, jnp.concatenate((samples.state, samples.next_state))
+        )
         # shape (batch_size, n_bellman_iterations)
         q_values = jax.vmap(lambda q_value, action: q_value[:, action])(
             all_q_values[:batch_size, self.n_bellman_iterations :], samples.action
@@ -108,16 +121,21 @@ class ExpiSDQN:
         stop_grad_targets = jax.lax.stop_gradient(targets)
 
         # shape (batch_size, n_bellman_iterations)
-        td_losses = jnp.square(q_values) - 2 * q_values * stop_grad_targets
+        td_losses = jnp.square(q_values - stop_grad_targets)
 
-        frozen_targets = jax.vmap(self.compute_target)(
-            samples, self.network.apply_fn(params_target, samples.next_state)[:, : self.n_bellman_iterations]
-        )
+        frozen_next_q_values, frozen_last_features = self.network.apply_fn(params_target, samples.next_state)[
+            :, : self.n_bellman_iterations
+        ]
+        frozen_targets = jax.vmap(self.compute_target)(samples, frozen_next_q_values)
         targets_change = (targets - frozen_targets) / (frozen_targets + 1e-9)
+        features_change = jnp.linalg.norm((last_features - frozen_last_features), axis=-1) / (
+            jnp.linalg(frozen_last_features, axis=-1) + 1e-9
+        )
 
         return td_losses.mean(axis=0).sum(), (
             td_losses.mean(axis=0),
             targets_change.mean(axis=0),
+            features_change.mean(axis=0),
         )
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
@@ -167,7 +185,7 @@ class ExpiSDQN:
         idx_network = jax.random.randint(key, (), 0, self.n_bellman_iterations)
 
         # computes the best action for a single state from a uniformly chosen online network
-        return jnp.argmax(self.network.apply_fn(params, state)[self.n_bellman_iterations + idx_network])
+        return jnp.argmax(self.network.apply_fn(params, state)[0][self.n_bellman_iterations + idx_network])
 
     def get_model(self):
         return {"params": self.params}
