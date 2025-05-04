@@ -37,7 +37,7 @@ class ExpiSDQN:
         def apply_fn(params, state):
             predictions, last_features = self.network.apply(params, state)
             return jnp.squeeze(predictions.reshape((-1, 2 * self.n_bellman_iterations, n_actions))), jnp.squeeze(
-                last_features.reshape((-1, 2 * self.n_bellman_iterations, features[-1]))
+                last_features.reshape((-1, features[-1]))
             )
 
         self.network.apply_fn = apply_fn
