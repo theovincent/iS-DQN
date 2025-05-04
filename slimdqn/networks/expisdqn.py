@@ -124,9 +124,9 @@ class ExpiSDQN:
 
         frozen_next_q_values, frozen_last_features = self.network.apply_fn(params_target, samples.next_state)
         frozen_targets = jax.vmap(self.compute_target)(samples, frozen_next_q_values[:, : self.n_bellman_iterations])
-        targets_change = (targets - frozen_targets) / (frozen_targets + 1e-9)
-        features_change = jnp.linalg.norm((last_features - frozen_last_features), axis=-1) / (
-            jnp.linalg(frozen_last_features, axis=-1) + 1e-9
+        targets_change = jnp.abs(targets - frozen_targets) / (frozen_targets + 1e-9)
+        features_change = jnp.linalg.norm((last_features[batch_size:] - frozen_last_features), axis=-1) / (
+            jnp.linalg.norm(frozen_last_features, axis=-1) + 1e-9
         )
 
         return td_losses.mean(axis=0).sum(), (
