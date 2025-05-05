@@ -13,9 +13,15 @@ class TestiSDQN(unittest.TestCase):
         self.random_seed = np.random.randint(1000)
         self.key = jax.random.PRNGKey(self.random_seed)
 
-        key_actions, key_n_bellman_iterations, key_feature_1, key_feature_2, key_feature_3, key_feature_4 = (
-            jax.random.split(self.key, 6)
-        )
+        (
+            key_actions,
+            key_n_bellman_iterations,
+            key_feature_1,
+            key_feature_2,
+            key_feature_3,
+            key_feature_4,
+            key_batch_norm,
+        ) = jax.random.split(self.key, 7)
         self.observation_dim = (84, 84, 4)
         self.n_actions = int(jax.random.randint(key_actions, (), minval=2, maxval=10))
         self.n_bellman_iterations = int(jax.random.randint(key_n_bellman_iterations, (), 1, 10))
@@ -31,6 +37,7 @@ class TestiSDQN(unittest.TestCase):
                 jax.random.randint(key_feature_4, (), minval=5, maxval=20),
             ],
             True,
+            jax.random.uniform(key_batch_norm) > 0.5,
             "cnn",
             0.001,
             0.94,
@@ -46,12 +53,11 @@ class TestiSDQN(unittest.TestCase):
         print(f"-------------- Random key {self.random_seed} --------------")
         sample = self.generator.sample(self.key)
         idx_network = jax.random.randint(self.key, (), 0, self.n_bellman_iterations)
+        q_values_, _ = self.q.network.apply_fn(self.q.params, sample.next_state)
+        next_q_values = jnp.squeeze(q_values_)[idx_network]
 
-        computed_target = self.q.compute_target(sample, self.q.network.apply_fn(self.q.params, sample.next_state))[
-            idx_network
-        ]
+        computed_target = self.q.compute_target(sample, next_q_values)
 
-        next_q_values = self.q.network.apply_fn(self.q.params, sample.next_state)[idx_network]
         target = sample.reward + (1 - sample.is_terminal) * self.q.gamma * jnp.max(next_q_values)
 
         self.assertEqual(next_q_values.shape, (self.n_actions,))
@@ -64,13 +70,16 @@ class TestiSDQN(unittest.TestCase):
         computed_loss = self.q.loss_on_batch(self.q.params, samples)[0]
 
         # shape (batch_size, 2 * n_bellman_iterations, n_actions)
-        predictions = self.q.network.apply_fn(self.q.params, samples.state)
+        all_q_predictions, _ = self.q.network.apply_fn(
+            self.q.params, jnp.concatenate((samples.state, samples.next_state))
+        )
         q_values = jax.vmap(lambda prediction, action: prediction[:, action])(
-            predictions[:, self.n_bellman_iterations :], samples.action
+            all_q_predictions[: samples.state.shape[0], self.n_bellman_iterations :], samples.action
         )
         # shape (batch_size, 2 * n_bellman_iterations, n_actions)
-        next_predictions = self.q.network.apply_fn(self.q.params, samples.next_state)
-        targets = jax.vmap(self.q.compute_target)(samples, next_predictions[:, : self.n_bellman_iterations])
+        targets = jax.vmap(self.q.compute_target)(
+            samples, all_q_predictions[samples.state.shape[0] :, : self.n_bellman_iterations]
+        )
         loss = jnp.square(q_values - targets).mean(axis=0).sum()
 
         self.assertEqual(loss, computed_loss)
@@ -82,7 +91,9 @@ class TestiSDQN(unittest.TestCase):
         computed_best_action = self.q.best_action(self.q.params, state, self.key)
 
         idx_network = jax.random.randint(self.key, (), 0, self.n_bellman_iterations) + self.n_bellman_iterations
-        q_values = self.q.network.apply_fn(self.q.params, state)[idx_network]
+        q_values = self.q.network.apply(self.q.params, state, use_running_average=True).reshape(
+            (2 * self.n_bellman_iterations, self.n_actions)
+        )[idx_network]
         best_action = jnp.argmax(q_values)
 
         self.assertEqual(q_values.shape, (self.n_actions,))
@@ -96,9 +107,13 @@ class TestiSDQN(unittest.TestCase):
         )
 
         # shape (n_bellman_iterations, n_actions)
-        q_values = self.q.network.apply_fn(self.q.params, state)
+        q_values = self.q.network.apply(self.q.params, state, use_running_average=True).reshape(
+            (2 * self.n_bellman_iterations, self.n_actions)
+        )
         self.q.params = self.q.shift_params(self.q.params)
-        shifted_q_values = self.q.network.apply_fn(self.q.params, state)
+        shifted_q_values = self.q.network.apply(self.q.params, state, use_running_average=True).reshape(
+            (2 * self.n_bellman_iterations, self.n_actions)
+        )
 
         # The target networks are equal to the online networks
         self.assertEqual(
@@ -119,9 +134,13 @@ class TestiSDQN(unittest.TestCase):
         )
 
         # shape (n_bellman_iterations, n_actions)
-        q_values = self.q.network.apply_fn(self.q.params, state)
+        q_values = self.q.network.apply(self.q.params, state, use_running_average=True).reshape(
+            (2 * self.n_bellman_iterations, self.n_actions)
+        )
         self.q.params = self.q.sync_target_params(self.q.params)
-        sync_q_values = self.q.network.apply_fn(self.q.params, state)
+        sync_q_values = self.q.network.apply(self.q.params, state, use_running_average=True).reshape(
+            (2 * self.n_bellman_iterations, self.n_actions)
+        )
 
         # \bar{Q}_0 has not changed.
         self.assertEqual(

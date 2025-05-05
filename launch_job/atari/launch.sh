@@ -5,6 +5,7 @@ SHARED_ARGS="--features 32 64 64 512 --replay_buffer_capacity 1_000_000 --batch_
 GAME="Assault"
 N_BELLMAN_ITERATIONS=1  # 1 3 5 10
 LAYER_NORM=1  # 0 1
+BATCH_NORM=0  # 0 1
 ARCHITECTURE_TYPE="cnn"  # cnn impala
 TARGET_UPDATE_FREQ=8000
 TARGET_SYNC_FREQ=30
@@ -19,17 +20,23 @@ if [ $LAYER_NORM == 1 ]
 then
     SHARED_ARGS="$SHARED_ARGS --layer_norm"
 fi
+if [ $LAYER_NORM == 1 ]
+then
+    SHARED_ARGS="$SHARED_ARGS --batch_norm"
+fi
 
 SHARED_ARGS="$SHARED_ARGS --target_update_frequency $TARGET_UPDATE_FREQ --architecture_type $ARCHITECTURE_TYPE"
-
+SHARED_NAME="LN${LAYER_NORM}_BN${BATCH_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}"
 # ----- L2 Loss -----
 L2_ARGS="--learning_rate 6.25e-5"
 
-DQN_ARGS="--experiment_name L2_LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}_${GAME}"
+DQN_ARGS="--experiment_name L2_${SHARED_NAME}_${GAME}"
 # launch_job/atari/${PLATFORM}_dqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $L2_ARGS $DQN_ARGS
 # launch_job/atari/${PLATFORM}_dqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $DQN_ARGS
+# launch_job/atari/${PLATFORM}_tfdqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $L2_ARGS $DQN_ARGS
+# launch_job/atari/${PLATFORM}_tfdqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $DQN_ARGS
 
-ISDQN_ARGS="--experiment_name L2_K${N_BELLMAN_ITERATIONS}_LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}_D${TARGET_SYNC_FREQ}_${GAME} \
+ISDQN_ARGS="--experiment_name L2_K${N_BELLMAN_ITERATIONS}_${SHARED_NAME}_D${TARGET_SYNC_FREQ}_${GAME} \
     --n_bellman_iterations $N_BELLMAN_ITERATIONS --target_sync_frequency $TARGET_SYNC_FREQ"
 # launch_job/atari/${PLATFORM}_isdqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $L2_ARGS $ISDQN_ARGS
 # launch_job/atari/${PLATFORM}_isdqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $ISDQN_ARGS
@@ -37,11 +44,11 @@ ISDQN_ARGS="--experiment_name L2_K${N_BELLMAN_ITERATIONS}_LN${LAYER_NORM}_${ARCH
 # ----- HL Loss -----
 HL_ARGS="--learning_rate 2.5e-4 --n_bins 51 --min_value -10 --max_value 10 --sigma 0.294117647"
 
-HLDQN_ARGS="--experiment_name HL_LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}_${GAME}"
+HLDQN_ARGS="--experiment_name HL_${SHARED_NAME}_${GAME}"
 # launch_job/atari/${PLATFORM}_hldqn.sh --first_seed 1 --last_seed 3 --n_parallel_seeds 1 $SHARED_ARGS $HL_ARGS $HLDQN_ARGS
 # launch_job/atari/${PLATFORM}_hldqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $HL_ARGS $HLDQN_ARGS 
 
-ISHLDQN_ARGS="--experiment_name HL_K${N_BELLMAN_ITERATIONS}_LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}_D${TARGET_SYNC_FREQ}_${GAME} \
+ISHLDQN_ARGS="--experiment_name HL_K${N_BELLMAN_ITERATIONS}_${SHARED_NAME}_D${TARGET_SYNC_FREQ}_${GAME} \
     --n_bellman_iterations $N_BELLMAN_ITERATIONS --target_sync_frequency $TARGET_SYNC_FREQ"
 # launch_job/atari/${PLATFORM}_ishldqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $HL_ARGS $ISHLDQN_ARGS
 # launch_job/atari/${PLATFORM}_ishldqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $HL_ARGS $ISHLDQN_ARGS

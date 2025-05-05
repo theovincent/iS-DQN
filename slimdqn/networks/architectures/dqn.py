@@ -11,7 +11,7 @@ class Stack(nn.Module):
     layer_norm: bool
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x, use_running_average=False):
         initializer = nn.initializers.xavier_uniform()
         x = nn.Conv(
             features=self.stack_size,
@@ -24,6 +24,8 @@ class Stack(nn.Module):
             block_input = x
             if self.layer_norm:
                 x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
+            elif self.batch_norm:
+                x = nn.BatchNorm(use_running_average, axis=(1, 2))(x)
             x = nn.Conv(features=self.stack_size, kernel_size=(3, 3))(nn.relu(x))
             x = nn.Conv(features=self.stack_size, kernel_size=(3, 3))(nn.relu(x))
             x += block_input
@@ -36,9 +38,10 @@ class DQNNet(nn.Module):
     architecture_type: str
     final_feature: int
     layer_norm: bool = False
+    batch_norm: bool = False
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x, use_running_average=False):
         if self.architecture_type == "cnn":
             initializer = nn.initializers.xavier_uniform()
             idx_feature_start = 3
@@ -47,17 +50,22 @@ class DQNNet(nn.Module):
             )
             if self.layer_norm:
                 x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
-
+            elif self.batch_norm:
+                x = nn.BatchNorm(use_running_average, axis=(1, 2))(x)
             x = nn.Conv(features=self.features[1], kernel_size=(4, 4), strides=(2, 2), kernel_init=initializer)(
                 nn.relu(x)
             )
             if self.layer_norm:
                 x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
+            elif self.batch_norm:
+                x = nn.BatchNorm(use_running_average, axis=(1, 2))(x)
             x = nn.Conv(features=self.features[2], kernel_size=(3, 3), strides=(1, 1), kernel_init=initializer)(
                 nn.relu(x)
             )
             if self.layer_norm:
                 x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
+            elif self.batch_norm:
+                x = nn.BatchNorm(use_running_average, axis=(1, 2))(x)
             x = nn.relu(x).reshape((x.shape[0], -1))
         elif self.architecture_type == "impala":
             initializer = nn.initializers.xavier_uniform()
@@ -67,6 +75,8 @@ class DQNNet(nn.Module):
             x = Stack(self.features[2], self.layer_norm)(x)
             if self.layer_norm:
                 x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
+            elif self.batch_norm:
+                x = nn.BatchNorm(use_running_average, axis=(1, 2))(x)
             x = nn.relu(x).reshape((x.shape[0], -1))
         elif self.architecture_type == "fc":
             initializer = nn.initializers.lecun_normal()
@@ -78,6 +88,8 @@ class DQNNet(nn.Module):
             x = nn.Dense(self.features[idx_layer], kernel_init=initializer)(x)
             if self.layer_norm:
                 x = nn.LayerNorm()(x)
+            elif self.batch_norm:
+                x = nn.BatchNorm(use_running_average)(x)
             x = nn.relu(x)
 
         return nn.Dense(self.final_feature, kernel_init=initializer)(x)

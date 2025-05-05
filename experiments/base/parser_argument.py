@@ -163,7 +163,17 @@ def add_layer_norm(parser: argparse.ArgumentParser):
     parser.add_argument(
         "-ln",
         "--layer_norm",
-        help="Flag to add layer norm for each layer.",
+        help="Flag to add layer norm.",
+        default=False,
+        action="store_true",
+    )
+
+
+def add_batch_norm(parser: argparse.ArgumentParser):
+    parser.add_argument(
+        "-ln",
+        "--batch_norm",
+        help="Flag to add batch norm.",
         default=False,
         action="store_true",
     )
@@ -229,6 +239,7 @@ def add_dqn_arguments(parser: argparse.ArgumentParser):
 @output_added_arguments
 def add_tfdqn_arguments(parser: argparse.ArgumentParser):
     add_layer_norm(parser)
+    add_batch_norm(parser)
     add_target_update_frequency(parser)
 
 
@@ -236,6 +247,7 @@ def add_tfdqn_arguments(parser: argparse.ArgumentParser):
 def add_isdqn_arguments(parser: argparse.ArgumentParser):
     add_n_bellman_iterations(parser)
     add_layer_norm(parser)
+    add_batch_norm(parser)
     add_target_update_frequency(parser)
     add_target_sync_frequency(parser)
 

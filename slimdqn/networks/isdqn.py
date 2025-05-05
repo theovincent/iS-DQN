@@ -19,6 +19,7 @@ class iSDQN:
         n_bellman_iterations: int,
         features: list,
         layer_norm: bool,
+        batch_norm: bool,
         architecture_type: str,
         learning_rate: float,
         gamma: float,
@@ -31,11 +32,16 @@ class iSDQN:
         self.n_bellman_iterations = n_bellman_iterations
         self.n_actions = n_actions
         self.last_idx_mlp = len(features) if architecture_type == "fc" else len(features) - 3
-        self.network = DQNNet(features, architecture_type, 2 * self.n_bellman_iterations * n_actions, layer_norm)
-        # 2 * self.n_bellman_iterations = [\bar{Q_0}, ..., \bar{Q_K-1}, Q_1, ..., Q_K]
-        self.network.apply_fn = lambda params, state: jnp.squeeze(
-            self.network.apply(params, state).reshape((-1, 2 * self.n_bellman_iterations, n_actions))
+        self.network = DQNNet(
+            features, architecture_type, 2 * self.n_bellman_iterations * n_actions, layer_norm, batch_norm
         )
+
+        # 2 * self.n_bellman_iterations = [\bar{Q_0}, ..., \bar{Q_K-1}, Q_1, ..., Q_K]
+        def apply(params, state):
+            q_values, batch_stats = self.network.apply(params, state, mutable=["batch_stats"])
+            return q_values.reshape((-1, 2 * self.n_bellman_iterations, n_actions)), batch_stats
+
+        self.network.apply_fn = apply
         self.params = self.network.init(key, jnp.zeros(observation_dim, dtype=jnp.float32))
 
         self.optimizer = optax.adam(learning_rate, eps=adam_eps)
@@ -80,16 +86,18 @@ class iSDQN:
 
     @partial(jax.jit, static_argnames="self")
     def learn_on_batch(self, params: FrozenDict, optimizer_state, batch_samples):
-        grad_loss, losses = jax.grad(self.loss_on_batch, has_aux=True)(params, batch_samples)
+        grad_loss, (losses, batch_stats) = jax.grad(self.loss_on_batch, has_aux=True)(params, batch_samples)
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
+        if self.network.batch_norm:
+            params["batch_stats"] = batch_stats["batch_stats"]
 
         return params, optimizer_state, losses
 
     def loss_on_batch(self, params: FrozenDict, samples):
         batch_size = samples.state.shape[0]
-        # shape (2 * batch_size, 2 * n_bellman_iterations, n_actions)
-        all_q_values = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
+        # shape (2 * batch_size, 2 * n_bellman_iterations, n_actions) | Dict
+        all_q_values, batch_stats = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
         # shape (batch_size, n_bellman_iterations)
         q_values = jax.vmap(lambda q_value, action: q_value[:, action])(
             all_q_values[:batch_size, self.n_bellman_iterations :], samples.action
@@ -99,7 +107,7 @@ class iSDQN:
 
         # shape (batch_size, n_bellman_iterations)
         td_losses = jnp.square(q_values - stop_grad_targets)
-        return td_losses.mean(axis=0).sum(), td_losses.mean(axis=0)
+        return td_losses.mean(axis=0).sum(), (td_losses.mean(axis=0), batch_stats)
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
         # shape of next_q_values (n_bellman_iterations, next_states, n_actions)
@@ -146,9 +154,12 @@ class iSDQN:
     @partial(jax.jit, static_argnames="self")
     def best_action(self, params: FrozenDict, state: jnp.ndarray, key: jax.Array):
         idx_network = jax.random.randint(key, (), 0, self.n_bellman_iterations)
+        q_values = self.network.apply(params, state, use_running_average=True).reshape(
+            (2 * self.n_bellman_iterations, self.n_actions)
+        )
 
         # computes the best action for a single state from a uniformly chosen online network
-        return jnp.argmax(self.network.apply_fn(params, state)[self.n_bellman_iterations + idx_network])
+        return jnp.argmax(q_values[self.n_bellman_iterations + idx_network])
 
     def get_model(self):
         return {"params": self.params}
