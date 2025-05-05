@@ -9,6 +9,7 @@ class Stack(nn.Module):
 
     stack_size: int
     layer_norm: bool
+    batch_norm: bool
 
     @nn.compact
     def __call__(self, x, use_running_average=False):
@@ -70,9 +71,9 @@ class DQNNet(nn.Module):
         elif self.architecture_type == "impala":
             initializer = nn.initializers.xavier_uniform()
             idx_feature_start = 3
-            x = Stack(self.features[0], self.layer_norm)(jnp.array(x, ndmin=4) / 255.0)
-            x = Stack(self.features[1], self.layer_norm)(x)
-            x = Stack(self.features[2], self.layer_norm)(x)
+            x = Stack(self.features[0], self.layer_norm, self.batch_norm)(jnp.array(x, ndmin=4) / 255.0)
+            x = Stack(self.features[1], self.layer_norm, self.batch_norm)(x)
+            x = Stack(self.features[2], self.layer_norm, self.batch_norm)(x)
             if self.layer_norm:
                 x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
             elif self.batch_norm:
