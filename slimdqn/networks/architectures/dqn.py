@@ -18,18 +18,14 @@ class Stack(nn.Module):
             kernel_size=(3, 3),
             kernel_init=initializer,
         )(x)
-        if self.layer_norm:
-            x = nn.LayerNorm()(x)
         x = nn.max_pool(x, window_shape=(3, 3), padding="SAME", strides=(2, 2))
 
         for _ in range(2):
             block_input = x
-            x = nn.Conv(features=self.stack_size, kernel_size=(3, 3))(nn.relu(x))
             if self.layer_norm:
-                x = nn.LayerNorm()(x)
+                x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
             x = nn.Conv(features=self.stack_size, kernel_size=(3, 3))(nn.relu(x))
-            if self.layer_norm:
-                x = nn.LayerNorm()(x)
+            x = nn.Conv(features=self.stack_size, kernel_size=(3, 3))(nn.relu(x))
             x += block_input
 
         return x
@@ -50,18 +46,18 @@ class DQNNet(nn.Module):
                 jnp.array(x, ndmin=4) / 255.0
             )
             if self.layer_norm:
-                x = nn.LayerNorm()(x)
+                x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
 
             x = nn.Conv(features=self.features[1], kernel_size=(4, 4), strides=(2, 2), kernel_init=initializer)(
                 nn.relu(x)
             )
             if self.layer_norm:
-                x = nn.LayerNorm()(x)
+                x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
             x = nn.Conv(features=self.features[2], kernel_size=(3, 3), strides=(1, 1), kernel_init=initializer)(
                 nn.relu(x)
             )
             if self.layer_norm:
-                x = nn.LayerNorm()(x)
+                x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
             x = nn.relu(x).reshape((x.shape[0], -1))
         elif self.architecture_type == "impala":
             initializer = nn.initializers.xavier_uniform()
@@ -69,6 +65,8 @@ class DQNNet(nn.Module):
             x = Stack(self.features[0], self.layer_norm)(jnp.array(x, ndmin=4) / 255.0)
             x = Stack(self.features[1], self.layer_norm)(x)
             x = Stack(self.features[2], self.layer_norm)(x)
+            if self.layer_norm:
+                x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
             x = nn.relu(x).reshape((x.shape[0], -1))
         elif self.architecture_type == "fc":
             initializer = nn.initializers.lecun_normal()
