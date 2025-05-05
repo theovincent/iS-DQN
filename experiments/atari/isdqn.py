@@ -36,6 +36,7 @@ def run(argvs=sys.argv[1:]):
         n_bellman_iterations=p["n_bellman_iterations"],
         features=p["features"],
         layer_norm=p["layer_norm"],
+        batch_norm=p["batch_norm"],
         architecture_type=p["architecture_type"],
         learning_rate=p["learning_rate"],
         gamma=p["gamma"],

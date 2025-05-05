@@ -2,7 +2,7 @@ SHARED_ARGS="--features 32 64 64 512 --replay_buffer_capacity 1_000_000 --batch_
     --horizon 27_000 --n_epochs 100 --n_training_steps_per_epoch 250_000 --data_to_update 4 --n_initial_samples 20_000 \
     --epsilon_end 0.01 --epsilon_duration 250_000"
 
-GAME="Assault"
+GAME="Asterix"
 N_BELLMAN_ITERATIONS=1  # 1 3 5 10
 LAYER_NORM=1  # 0 1
 BATCH_NORM=0  # 0 1
@@ -20,7 +20,7 @@ if [ $LAYER_NORM == 1 ]
 then
     SHARED_ARGS="$SHARED_ARGS --layer_norm"
 fi
-if [ $LAYER_NORM == 1 ]
+if [ $BATCH_NORM == 1 ]
 then
     SHARED_ARGS="$SHARED_ARGS --batch_norm"
 fi

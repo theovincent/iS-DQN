@@ -171,7 +171,7 @@ def add_layer_norm(parser: argparse.ArgumentParser):
 
 def add_batch_norm(parser: argparse.ArgumentParser):
     parser.add_argument(
-        "-ln",
+        "-bn",
         "--batch_norm",
         help="Flag to add batch norm.",
         default=False,
