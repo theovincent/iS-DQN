@@ -256,6 +256,7 @@ def add_isdqn_arguments(parser: argparse.ArgumentParser):
 def add_expisdqn_arguments(parser: argparse.ArgumentParser):
     add_n_bellman_iterations(parser)
     add_layer_norm(parser)
+    add_batch_norm(parser)
     add_target_update_frequency(parser)
     add_target_sync_frequency(parser)
 

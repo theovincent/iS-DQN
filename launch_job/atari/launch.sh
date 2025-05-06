@@ -40,6 +40,8 @@ ISDQN_ARGS="--experiment_name L2_K${N_BELLMAN_ITERATIONS}_${SHARED_NAME}_D${TARG
     --n_bellman_iterations $N_BELLMAN_ITERATIONS --target_sync_frequency $TARGET_SYNC_FREQ"
 # launch_job/atari/${PLATFORM}_isdqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $L2_ARGS $ISDQN_ARGS
 # launch_job/atari/${PLATFORM}_isdqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $ISDQN_ARGS
+# launch_job/atari/${PLATFORM}_expisdqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $L2_ARGS $ISDQN_ARGS
+# launch_job/atari/${PLATFORM}_expisdqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $ISDQN_ARGS
 
 # ----- HL Loss -----
 HL_ARGS="--learning_rate 2.5e-4 --n_bins 51 --min_value -10 --max_value 10 --sigma 0.294117647"
