@@ -71,21 +71,21 @@ class DQNNet(nn.Module):
                 x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
             x = nn.relu(x).reshape((x.shape[0], -1))
             if self.batch_norm:
-                x = nn.BatchNorm(use_running_average, axis=(1, 2))(x)
+                x = nn.BatchNorm(use_running_average)(x)
         elif self.architecture_type == "impala":
             initializer = nn.initializers.xavier_uniform()
             idx_feature_start = 3
             x = jnp.array(x, ndmin=4) / 255.0
             if self.batch_norm:
                 x = nn.BatchNorm(use_running_average, axis=(1, 2))(x)
-            x = Stack(self.features[0], self.layer_norm, self.batch_norm)(x)
-            x = Stack(self.features[1], self.layer_norm, self.batch_norm)(x)
-            x = Stack(self.features[2], self.layer_norm, self.batch_norm)(x)
+            x = Stack(self.features[0], self.layer_norm, self.batch_norm)(x, use_running_average)
+            x = Stack(self.features[1], self.layer_norm, self.batch_norm)(x, use_running_average)
+            x = Stack(self.features[2], self.layer_norm, self.batch_norm)(x, use_running_average)
             if self.layer_norm:
                 x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
             x = nn.relu(x).reshape((x.shape[0], -1))
             if self.batch_norm:
-                x = nn.BatchNorm(use_running_average, axis=(1, 2))(x)
+                x = nn.BatchNorm(use_running_average)(x)
         elif self.architecture_type == "fc":
             initializer = nn.initializers.lecun_normal()
             idx_feature_start = 0
