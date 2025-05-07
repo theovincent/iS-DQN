@@ -24,7 +24,7 @@ class Stack(nn.Module):
         for _ in range(2):
             block_input = x
             if self.layer_norm:
-                x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
+                x = nn.LayerNorm()(x)
             x = nn.relu(x)
             if self.batch_norm:
                 x = nn.BatchNorm(use_running_average, axis=(1, 2))(x)
@@ -54,21 +54,21 @@ class DQNNet(nn.Module):
 
             x = nn.Conv(features=self.features[0], kernel_size=(8, 8), strides=(4, 4), kernel_init=initializer)(x)
             if self.layer_norm:
-                x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
+                x = nn.LayerNorm()(x)
             x = nn.relu(x)
             if self.batch_norm:
                 x = nn.BatchNorm(use_running_average, axis=(1, 2))(x)
 
             x = nn.Conv(features=self.features[1], kernel_size=(4, 4), strides=(2, 2), kernel_init=initializer)(x)
             if self.layer_norm:
-                x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
+                x = nn.LayerNorm()(x)
             x = nn.relu(x)
             if self.batch_norm:
                 x = nn.BatchNorm(use_running_average, axis=(1, 2))(x)
 
             x = nn.Conv(features=self.features[2], kernel_size=(3, 3), strides=(1, 1), kernel_init=initializer)(x)
             if self.layer_norm:
-                x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
+                x = nn.LayerNorm()(x)
             x = nn.relu(x).reshape((x.shape[0], -1))
             if self.batch_norm:
                 x = nn.BatchNorm(use_running_average)(x)
@@ -82,7 +82,7 @@ class DQNNet(nn.Module):
             x = Stack(self.features[1], self.layer_norm, self.batch_norm)(x, use_running_average)
             x = Stack(self.features[2], self.layer_norm, self.batch_norm)(x, use_running_average)
             if self.layer_norm:
-                x = nn.LayerNorm(reduction_axes=(1, 2, 3))(x)
+                x = nn.LayerNorm()(x)
             x = nn.relu(x).reshape((x.shape[0], -1))
             if self.batch_norm:
                 x = nn.BatchNorm(use_running_average)(x)
