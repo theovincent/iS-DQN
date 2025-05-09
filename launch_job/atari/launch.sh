@@ -49,6 +49,8 @@ HL_ARGS="--learning_rate 2.5e-4 --n_bins 51 --min_value -10 --max_value 10 --sig
 HLDQN_ARGS="--experiment_name HL_${SHARED_NAME}_${GAME}"
 # launch_job/atari/${PLATFORM}_hldqn.sh --first_seed 1 --last_seed 3 --n_parallel_seeds 1 $SHARED_ARGS $HL_ARGS $HLDQN_ARGS
 # launch_job/atari/${PLATFORM}_hldqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $HL_ARGS $HLDQN_ARGS 
+# launch_job/atari/${PLATFORM}_tfhldqn.sh --first_seed 1 --last_seed 3 --n_parallel_seeds 1 $SHARED_ARGS $HL_ARGS $HLDQN_ARGS
+# launch_job/atari/${PLATFORM}_tfhldqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $HL_ARGS $HLDQN_ARGS 
 
 ISHLDQN_ARGS="--experiment_name HL_K${N_BELLMAN_ITERATIONS}_${SHARED_NAME}_D${TARGET_SYNC_FREQ}_${GAME} \
     --n_bellman_iterations $N_BELLMAN_ITERATIONS --target_sync_frequency $TARGET_SYNC_FREQ"
