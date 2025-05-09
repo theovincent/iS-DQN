@@ -56,7 +56,7 @@ class TFHLDQN:
             batch_samples = replay_buffer.sample()
 
             self.params, self.optimizer_state, loss, unsupported_prob = self.learn_on_batch(
-                self.params, self.target_params, self.optimizer_state, batch_samples
+                self.params, self.optimizer_state, batch_samples
             )
             self.cumulated_loss += loss
             self.cumulated_unsupported_prob += unsupported_prob
