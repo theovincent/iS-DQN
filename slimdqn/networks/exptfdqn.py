@@ -266,7 +266,9 @@ class ExpTFDQN:
         )
         dot_products_targets = jax.tree.map(
             lambda grads_q_value_w, grads_target_w: jax.vmap(
-                lambda grad_q_value_w, grad_target_w: jnp.dot(grad_q_value_w.flatten(), -grad_target_w.flatten())
+                lambda grad_q_value_w, grad_target_w: jnp.dot(
+                    grad_q_value_w.flatten(), grad_q_value_w.flatten() - grad_target_w.flatten()
+                )
             )(grads_q_value_w, grads_target_w),
             grads_q_value,
             grads_target,
