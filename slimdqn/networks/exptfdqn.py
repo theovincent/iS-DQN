@@ -60,7 +60,7 @@ class ExpTFDQN:
                 target_change,
                 target_abs_change,
                 dot_product_target,
-            ) = self.learn_on_batch(self.params, self.target_params, self.optimizer_state, batch_samples)
+            ) = self.learn_on_batch(self.params, self.optimizer_state, batch_samples)
             self.cumulated_loss += loss
             self.cumulated_q_value_change += q_value_change
             self.cumulated_q_value_abs_change += q_value_abs_change
@@ -121,9 +121,6 @@ class ExpTFDQN:
 
             return True, logs
 
-        if step % self.target_sync_frequency == 0:
-            self.target_params = self.sync_target_params(self.params)
-
         return False, {}
 
     @partial(jax.jit, static_argnames="self")
@@ -139,7 +136,7 @@ class ExpTFDQN:
         ) = jax.grad(self.loss_on_batch, has_aux=True)(params, batch_samples)
 
         # Compute dot product between the gradient of the loss and the gradient of each term of the loss
-        grad_loss = jax.grad(self.loss_on_batch, has_aux=True)(params, batch_samples)
+        grad_loss, _ = jax.grad(self.loss_on_batch, has_aux=True)(params, batch_samples)
 
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
@@ -171,7 +168,7 @@ class ExpTFDQN:
 
         # Compute changes in q_values and targets
         frozen_all_q_values, _ = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
-        frozen_q_values = jax.vmap(lambda q_value, action: q_value[:, action])(
+        frozen_q_values = jax.vmap(lambda q_value, action: q_value[action])(
             frozen_all_q_values[:batch_size], samples.action
         )
         frozen_targets = jax.vmap(self.compute_target)(samples, frozen_all_q_values[batch_size:])
@@ -189,8 +186,8 @@ class ExpTFDQN:
             all_q_values_, _ = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
             return self.compute_target(samples, all_q_values_[batch_size:]).mean()
 
-        grads_q_value = jax.grad(compute_q_value)
-        grads_target = jax.grad(compute_targets_value)
+        grads_q_value = jax.grad(compute_q_value)(params, samples)
+        grads_target = jax.grad(compute_targets_value)(params, samples)
 
         dot_product_target = jax.tree.map(
             lambda grads_q_value_w, grads_target_w: jax.vmap(
