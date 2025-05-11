@@ -17,7 +17,6 @@ class ExpTFDQN:
         key: jax.random.PRNGKey,
         observation_dim,
         n_actions,
-        n_bellman_iterations: int,
         features: list,
         layer_norm: bool,
         batch_norm: bool,
@@ -27,42 +26,28 @@ class ExpTFDQN:
         update_horizon: int,
         data_to_update: int,
         target_update_frequency: int,
-        target_sync_frequency: int,
         adam_eps: float = 1e-8,
     ):
-        self.n_bellman_iterations = n_bellman_iterations
         self.n_actions = n_actions
         self.last_idx_mlp = len(features) if architecture_type == "fc" else len(features) - 3
-        self.network = DQNNet(
-            features, architecture_type, 2 * self.n_bellman_iterations * n_actions, layer_norm, batch_norm
-        )
+        self.network = DQNNet(features, architecture_type, n_actions, layer_norm, batch_norm)
 
-        # 2 * self.n_bellman_iterations = [\bar{Q_0}, ..., \bar{Q_K-1}, Q_1, ..., Q_K]
-        def apply(params, state):
-            q_values, batch_stats = self.network.apply(params, state, mutable=["batch_stats"])
-            return q_values.reshape((-1, 2 * self.n_bellman_iterations, n_actions)), batch_stats
-
-        self.network.apply_fn = apply
+        self.network.apply_fn = lambda params, state: self.network.apply(params, state, mutable=["batch_stats"])
         self.params = self.network.init(key, jnp.zeros(observation_dim, dtype=jnp.float32))
 
         self.optimizer = optax.adam(learning_rate, eps=adam_eps)
         self.optimizer_state = self.optimizer.init(self.params)
-        self.target_params = self.params
 
         self.gamma = gamma
         self.update_horizon = update_horizon
         self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
-        self.target_sync_frequency = target_sync_frequency
-        self.cumulated_losses = np.zeros(self.n_bellman_iterations)
-        self.cumulated_q_values_change = np.zeros(self.n_bellman_iterations)
-        self.cumulated_q_values_abs_change = np.zeros(self.n_bellman_iterations)
-        self.cumulated_targets_change = np.zeros(self.n_bellman_iterations)
-        self.cumulated_targets_abs_change = np.zeros(self.n_bellman_iterations)
-        self.cumulated_dot_products_targets = jax.tree.map(lambda _: np.zeros(self.n_bellman_iterations), self.params)
-        self.cumulated_dot_products_iterations = jax.tree.map(
-            lambda _: np.zeros(self.n_bellman_iterations), self.params
-        )
+        self.cumulated_losses = 0
+        self.cumulated_q_value_change = 0
+        self.cumulated_q_value_abs_change = 0
+        self.cumulated_target_change = 0
+        self.cumulated_target_abs_change = 0
+        self.cumulated_dot_product_target = jax.tree.map(lambda _: 0, self.params)
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
         if step % self.data_to_update == 0:
@@ -71,35 +56,26 @@ class ExpTFDQN:
             (
                 self.params,
                 self.optimizer_state,
-                losses,
-                q_values_change,
-                q_values_abs_change,
-                targets_change,
-                targets_abs_change,
-                dot_products_targets,
-                dot_products_iterations,
+                loss,
+                q_value_change,
+                q_value_abs_change,
+                target_change,
+                target_abs_change,
+                dot_product_target,
             ) = self.learn_on_batch(self.params, self.target_params, self.optimizer_state, batch_samples)
-            self.cumulated_losses += losses
-            self.cumulated_q_values_change += q_values_change
-            self.cumulated_q_values_abs_change += q_values_abs_change
-            self.cumulated_targets_change += targets_change
-            self.cumulated_targets_abs_change += targets_abs_change
+            self.cumulated_losses += loss
+            self.cumulated_q_values_change += q_value_change
+            self.cumulated_q_values_abs_change += q_value_abs_change
+            self.cumulated_targets_change += target_change
+            self.cumulated_targets_abs_change += target_abs_change
             self.cumulated_dot_products_targets = jax.tree.map(
                 lambda cumulated_dot_products_w, dot_products_w: cumulated_dot_products_w + dot_products_w,
                 self.cumulated_dot_products_targets,
-                dot_products_targets,
-            )
-            self.cumulated_dot_products_iterations = jax.tree.map(
-                lambda cumulated_dot_products_w, dot_products_w: cumulated_dot_products_w + dot_products_w,
-                self.cumulated_dot_products_iterations,
-                dot_products_iterations,
+                dot_product_target,
             )
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
-            # Window shift
-            self.target_params = self.params.copy()
-            self.params = self.shift_params(self.params)
 
             flatten_cumulated_dot_products_targets = flax.traverse_util.flatten_dict(
                 self.cumulated_dot_products_targets["params"], sep="_"
@@ -300,56 +276,15 @@ class ExpTFDQN:
         return td_losses.mean()
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
-        # shape of next_q_values (n_bellman_iterations, next_states, n_actions)
+        # shape of next_q_values (next_states, n_actions)
         return sample.reward + (1 - sample.is_terminal) * (self.gamma**self.update_horizon) * jnp.max(
             next_q_values, axis=-1
         )
 
     @partial(jax.jit, static_argnames="self")
-    def shift_params(self, params):
-        # Shift the last weight matrix with shape (last_feature, 2 x n_bellman_iterations x n_actions)
-        # Reminder: 2 * self.n_bellman_iterations = [\bar{Q_0}, ..., \bar{Q_K-1}, Q_1, ..., Q_K]
-        # Here we shifting: \bar{Q_i} <- Q_i+1
-        kernel = params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"]
-        params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"] = kernel.at[
-            :, : self.n_bellman_iterations * self.n_actions
-        ].set(kernel[:, self.n_bellman_iterations * self.n_actions :])
-
-        # Shift the last bias vector with shape (2 x n_bellman_iterations x n_actions)
-        bias = params["params"][f"Dense_{self.last_idx_mlp}"]["bias"]
-        params["params"][f"Dense_{self.last_idx_mlp}"]["bias"] = bias.at[
-            : self.n_bellman_iterations * self.n_actions
-        ].set(bias[self.n_bellman_iterations * self.n_actions :])
-
-        return params
-
-    @partial(jax.jit, static_argnames="self")
-    def sync_target_params(self, params):
-        # Synchronize the last weight matrix with shape (last_feature, 2 x n_bellman_iterations x n_actions)
-        # Reminder: 2 * self.n_bellman_iterations = [\bar{Q_0}, ..., \bar{Q_K-1}, Q_1, ..., Q_K]
-        # Here we synchronize: \bar{Q_i} <- Q_i
-        kernel = params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"]
-        params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"] = kernel.at[
-            :, self.n_actions : self.n_bellman_iterations * self.n_actions
-        ].set(kernel[:, self.n_bellman_iterations * self.n_actions : -self.n_actions])
-
-        # Synchronize the last bias vector with shape (2 x n_bellman_iterations x n_actions)
-        bias = params["params"][f"Dense_{self.last_idx_mlp}"]["bias"]
-        params["params"][f"Dense_{self.last_idx_mlp}"]["bias"] = bias.at[
-            self.n_actions : self.n_bellman_iterations * self.n_actions
-        ].set(bias[self.n_bellman_iterations * self.n_actions : -self.n_actions])
-
-        return params
-
-    @partial(jax.jit, static_argnames="self")
-    def best_action(self, params: FrozenDict, state: jnp.ndarray, key: jax.Array):
-        idx_network = jax.random.randint(key, (), 0, self.n_bellman_iterations)
-        q_values = self.network.apply(params, state, use_running_average=True).reshape(
-            (2 * self.n_bellman_iterations, self.n_actions)
-        )
-
-        # computes the best action for a single state from a uniformly chosen online network
-        return jnp.argmax(q_values[self.n_bellman_iterations + idx_network])
+    def best_action(self, params: FrozenDict, state: jnp.ndarray, **kwargs):
+        # computes the best action for a single state
+        return jnp.argmax(self.network.apply(params, state, use_running_average=True))
 
     def get_model(self):
         return {"params": self.params}
