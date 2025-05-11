@@ -28,8 +28,6 @@ class ExpTFDQN:
         target_update_frequency: int,
         adam_eps: float = 1e-8,
     ):
-        self.n_actions = n_actions
-        self.last_idx_mlp = len(features) if architecture_type == "fc" else len(features) - 3
         self.network = DQNNet(features, architecture_type, n_actions, layer_norm, batch_norm)
 
         self.network.apply_fn = lambda params, state: self.network.apply(params, state, mutable=["batch_stats"])
@@ -42,7 +40,7 @@ class ExpTFDQN:
         self.update_horizon = update_horizon
         self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
-        self.cumulated_losses = 0
+        self.cumulated_loss = 0
         self.cumulated_q_value_change = 0
         self.cumulated_q_value_abs_change = 0
         self.cumulated_target_change = 0
@@ -63,85 +61,62 @@ class ExpTFDQN:
                 target_abs_change,
                 dot_product_target,
             ) = self.learn_on_batch(self.params, self.target_params, self.optimizer_state, batch_samples)
-            self.cumulated_losses += loss
-            self.cumulated_q_values_change += q_value_change
-            self.cumulated_q_values_abs_change += q_value_abs_change
-            self.cumulated_targets_change += target_change
-            self.cumulated_targets_abs_change += target_abs_change
-            self.cumulated_dot_products_targets = jax.tree.map(
+            self.cumulated_loss += loss
+            self.cumulated_q_value_change += q_value_change
+            self.cumulated_q_value_abs_change += q_value_abs_change
+            self.cumulated_target_change += target_change
+            self.cumulated_target_abs_change += target_abs_change
+            self.cumulated_dot_product_target = jax.tree.map(
                 lambda cumulated_dot_products_w, dot_products_w: cumulated_dot_products_w + dot_products_w,
-                self.cumulated_dot_products_targets,
+                self.cumulated_dot_product_target,
                 dot_product_target,
             )
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
 
-            flatten_cumulated_dot_products_targets = flax.traverse_util.flatten_dict(
-                self.cumulated_dot_products_targets["params"], sep="_"
-            )
-            flatten_cumulated_dot_products_iterations = flax.traverse_util.flatten_dict(
-                self.cumulated_dot_products_iterations["params"], sep="_"
+            flatten_cumulated_dot_product_target = flax.traverse_util.flatten_dict(
+                self.cumulated_dot_product_target["params"], sep="_"
             )
 
             logs = {
-                "loss": np.mean(self.cumulated_losses) / (self.target_update_frequency / self.data_to_update),
+                "loss": self.cumulated_loss / (self.target_update_frequency / self.data_to_update),
             }
-            for idx_network in range(min(self.n_bellman_iterations, 5)):
-                logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
-                    self.target_update_frequency / self.data_to_update
-                )
-                logs[f"analysis/{idx_network}_q_value_change"] = self.cumulated_q_values_change[idx_network] / (
-                    self.target_update_frequency / self.data_to_update
-                )
-                logs[f"analysis/{idx_network}_q_value_abs_change"] = self.cumulated_q_values_abs_change[idx_network] / (
-                    self.target_update_frequency / self.data_to_update
-                )
-                logs[f"analysis/{idx_network}_target_change"] = self.cumulated_targets_change[idx_network] / (
-                    self.target_update_frequency / self.data_to_update
-                )
-                logs[f"analysis/{idx_network}_target_abs_change"] = self.cumulated_targets_abs_change[idx_network] / (
-                    self.target_update_frequency / self.data_to_update
-                )
-                logs.update(
-                    dict(
-                        zip(
-                            map(
-                                lambda key: f"target_sharing/{idx_network}_" + key,
-                                flatten_cumulated_dot_products_targets.keys(),
-                            ),
-                            map(
-                                lambda value: value[idx_network] / (self.target_update_frequency / self.data_to_update),
-                                flatten_cumulated_dot_products_targets.values(),
-                            ),
-                        )
-                    )
-                )
-                logs.update(
-                    dict(
-                        zip(
-                            map(
-                                lambda key: f"iteration_sharing/{idx_network}_" + key,
-                                flatten_cumulated_dot_products_iterations.keys(),
-                            ),
-                            map(
-                                lambda value: value[idx_network] / (self.target_update_frequency / self.data_to_update),
-                                flatten_cumulated_dot_products_iterations.values(),
-                            ),
-                        )
-                    )
-                )
 
-            self.cumulated_losses = np.zeros_like(self.cumulated_losses)
-            self.cumulated_q_values_change = np.zeros_like(self.cumulated_q_values_change)
-            self.cumulated_q_values_abs_change = np.zeros_like(self.cumulated_q_values_abs_change)
-            self.cumulated_targets_change = np.zeros_like(self.cumulated_targets_change)
-            self.cumulated_targets_abs_change = np.zeros_like(self.cumulated_targets_abs_change)
-            self.cumulated_dot_products_targets = jax.tree.map(
-                lambda dot_products_w: np.zeros_like(dot_products_w), self.cumulated_dot_products_targets
+            logs[f"analysis/q_value_change"] = self.cumulated_q_value_change / (
+                self.target_update_frequency / self.data_to_update
             )
-            self.cumulated_dot_products_iterations = jax.tree.map(
-                lambda dot_products_w: np.zeros_like(dot_products_w), self.cumulated_dot_products_iterations
+            logs[f"analysis/q_value_abs_change"] = self.cumulated_q_value_abs_change / (
+                self.target_update_frequency / self.data_to_update
+            )
+            logs[f"analysis/target_change"] = self.cumulated_target_change / (
+                self.target_update_frequency / self.data_to_update
+            )
+            logs[f"analysis/target_abs_change"] = self.cumulated_target_abs_change / (
+                self.target_update_frequency / self.data_to_update
+            )
+            logs.update(
+                dict(
+                    zip(
+                        map(
+                            lambda key: f"target_sharing/" + key,
+                            flatten_cumulated_dot_product_target.keys(),
+                        ),
+                        map(
+                            lambda value: value / (self.target_update_frequency / self.data_to_update),
+                            flatten_cumulated_dot_product_target.values(),
+                        ),
+                    )
+                )
+            )
+
+            self.cumulated_loss = 0
+            self.cumulated_q_value_change = 0
+            self.cumulated_q_value_abs_change = 0
+            self.cumulated_target_change = 0
+            self.cumulated_target_abs_change = 0
+            self.cumulated_dot_product_target = jax.tree.map(
+                lambda dot_products_w: np.zeros_like(dot_products_w), self.cumulated_dot_product_target
             )
 
             return True, logs
@@ -152,30 +127,19 @@ class ExpTFDQN:
         return False, {}
 
     @partial(jax.jit, static_argnames="self")
-    def learn_on_batch(self, params: FrozenDict, params_target: FrozenDict, optimizer_state, batch_samples):
+    def learn_on_batch(self, params: FrozenDict, optimizer_state, batch_samples):
         grad_loss, (
-            losses,
+            loss,
             batch_stats,
-            q_values_change,
-            q_values_abs_change,
-            targets_change,
-            targets_abs_change,
-            dot_products_targets,
-        ) = jax.grad(self.loss_on_batch, has_aux=True)(params, params_target, batch_samples)
+            q_value_change,
+            q_value_abs_change,
+            target_change,
+            target_abs_change,
+            dot_product_target,
+        ) = jax.grad(self.loss_on_batch, has_aux=True)(params, batch_samples)
 
         # Compute dot product between the gradient of the loss and the gradient of each term of the loss
-        grads_loss = jax.vmap(jax.grad(self.loss_on_batch_one_bellman_iteration), in_axes=(None, None, 0))(
-            params, batch_samples, jnp.arange(self.n_bellman_iterations)
-        )
-        dot_products_iterations = jax.tree.map(
-            jax.vmap(
-                lambda grad_loss, grad_loss_i: jnp.dot(grad_loss.flatten(), grad_loss_i.flatten())
-                / (jnp.linalg.norm(grad_loss.flatten()) * jnp.linalg.norm(grad_loss_i.flatten()) + 1e-9),
-                in_axes=(None, 0),
-            ),
-            grad_loss,
-            grads_loss,
-        )
+        grad_loss = jax.grad(self.loss_on_batch, has_aux=True)(params, batch_samples)
 
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
@@ -185,62 +149,50 @@ class ExpTFDQN:
         return (
             params,
             optimizer_state,
-            losses,
-            q_values_change,
-            q_values_abs_change,
-            targets_change,
-            targets_abs_change,
-            dot_products_targets,
-            dot_products_iterations,
+            loss,
+            q_value_change,
+            q_value_abs_change,
+            target_change,
+            target_abs_change,
+            dot_product_target,
         )
 
-    def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
+    def loss_on_batch(self, params: FrozenDict, samples):
         batch_size = samples.state.shape[0]
-        # shape (2 * batch_size, 2 * n_bellman_iterations, n_actions) | Dict
-        all_q_values, batch_stats = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
-        # shape (batch_size, n_bellman_iterations)
-        q_values = jax.vmap(lambda q_value, action: q_value[:, action])(
-            all_q_values[:batch_size, self.n_bellman_iterations :], samples.action
+        # shape (2 * batch_size, n_actions)
+        all_q_values, batch_stats = self.network.apply(
+            params, jnp.concatenate((samples.state, samples.next_state)), mutable=["batch_stats"]
         )
-        targets = jax.vmap(self.compute_target)(samples, all_q_values[batch_size:, : self.n_bellman_iterations])
+        q_values = jax.vmap(lambda q_value, action: q_value[action])(all_q_values[:batch_size], samples.action)
+        targets = self.compute_target(samples, all_q_values[batch_size:])
         stop_grad_targets = jax.lax.stop_gradient(targets)
 
-        # shape (batch_size, n_bellman_iterations)
-        td_losses = jnp.square(q_values - stop_grad_targets)
+        td_loss = jnp.square(q_values - stop_grad_targets)
 
         # Compute changes in q_values and targets
-        frozen_all_q_values, _ = self.network.apply_fn(
-            params_target, jnp.concatenate((samples.state, samples.next_state))
-        )
+        frozen_all_q_values, _ = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
         frozen_q_values = jax.vmap(lambda q_value, action: q_value[:, action])(
-            frozen_all_q_values[:batch_size, self.n_bellman_iterations :], samples.action
+            frozen_all_q_values[:batch_size], samples.action
         )
-        frozen_targets = jax.vmap(self.compute_target)(
-            samples, frozen_all_q_values[batch_size:, : self.n_bellman_iterations]
-        )
-        q_values_change = (q_values - frozen_q_values) / (frozen_q_values + 1e-9)
-        q_values_abs_change = jnp.abs(q_values_change)
-        targets_change = (targets - frozen_targets) / (frozen_targets + 1e-9)
-        targets_abs_change = jnp.abs(targets_change)
+        frozen_targets = jax.vmap(self.compute_target)(samples, frozen_all_q_values[batch_size:])
+        q_value_change = (q_values - frozen_q_values) / (frozen_q_values + 1e-9)
+        q_value_abs_change = jnp.abs(q_value_change)
+        target_change = (targets - frozen_targets) / (frozen_targets + 1e-9)
+        target_abs_change = jnp.abs(target_change)
 
         # Compute the dot products between the gradient w.r.t the online network and the gradient w.r.t the target network
-        def compute_q_value(params, samples, idx_bellman_iteration):
+        def compute_q_value(params, samples):
             all_q_values_, _ = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
-            return jax.vmap(lambda q_value, action: q_value[action])(
-                all_q_values_[:batch_size, self.n_bellman_iterations + idx_bellman_iteration], samples.action
-            ).mean()
+            return jax.vmap(lambda q_value, action: q_value[action])(all_q_values_[:batch_size], samples.action).mean()
 
-        def compute_targets_value(params, samples, idx_bellman_iteration):
+        def compute_targets_value(params, samples):
             all_q_values_, _ = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
-            return self.compute_target(samples, all_q_values_[batch_size:, idx_bellman_iteration]).mean()
+            return self.compute_target(samples, all_q_values_[batch_size:]).mean()
 
-        grads_q_value = jax.vmap(jax.grad(compute_q_value), in_axes=(None, None, 0))(
-            params, samples, jnp.arange(self.n_bellman_iterations)
-        )
-        grads_target = jax.vmap(jax.grad(compute_targets_value), in_axes=(None, None, 0))(
-            params, samples, jnp.arange(self.n_bellman_iterations)
-        )
-        dot_products_targets = jax.tree.map(
+        grads_q_value = jax.grad(compute_q_value)
+        grads_target = jax.grad(compute_targets_value)
+
+        dot_product_target = jax.tree.map(
             lambda grads_q_value_w, grads_target_w: jax.vmap(
                 lambda grad_q_value_w, grad_target_w: jnp.dot(
                     grad_q_value_w.flatten(), grad_q_value_w.flatten() - grad_target_w.flatten()
@@ -250,30 +202,15 @@ class ExpTFDQN:
             grads_target,
         )
 
-        return td_losses.mean(axis=0).sum(), (
-            td_losses.mean(axis=0),
+        return td_loss.mean(axis=0), (
+            td_loss.mean(axis=0),
             batch_stats,
-            q_values_change.mean(axis=0),
-            q_values_abs_change.mean(axis=0),
-            targets_change.mean(axis=0),
-            targets_abs_change.mean(axis=0),
-            dot_products_targets,
+            q_value_change.mean(axis=0),
+            q_value_abs_change.mean(axis=0),
+            target_change.mean(axis=0),
+            target_abs_change.mean(axis=0),
+            dot_product_target,
         )
-
-    def loss_on_batch_one_bellman_iteration(self, params: FrozenDict, samples, idx_bellman_iteration):
-        batch_size = samples.state.shape[0]
-        # shape (2 * batch_size, 2 * n_bellman_iterations, n_actions) | Dict
-        all_q_values, _ = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
-        # shape (batch_size, n_bellman_iterations)
-        q_values = jax.vmap(lambda q_value, action: q_value[action])(
-            all_q_values[:batch_size, self.n_bellman_iterations + idx_bellman_iteration], samples.action
-        )
-        targets = self.compute_target(samples, all_q_values[batch_size:, idx_bellman_iteration])
-        stop_grad_targets = jax.lax.stop_gradient(targets)
-
-        # shape (batch_size, n_bellman_iterations)
-        td_losses = jnp.square(q_values - stop_grad_targets)
-        return td_losses.mean()
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
         # shape of next_q_values (next_states, n_actions)
