@@ -32,6 +32,7 @@ class ExpTFDQN:
 
         self.network.apply_fn = lambda params, state: self.network.apply(params, state, mutable=["batch_stats"])
         self.params = self.network.init(key, jnp.zeros(observation_dim, dtype=jnp.float32))
+        self.target_params = self.params.copy()
 
         self.optimizer = optax.adam(learning_rate, eps=adam_eps)
         self.optimizer_state = self.optimizer.init(self.params)
@@ -45,6 +46,7 @@ class ExpTFDQN:
         self.cumulated_q_value_abs_change = 0
         self.cumulated_target_change = 0
         self.cumulated_target_abs_change = 0
+        self.cumulated_td_change = 0
         self.cumulated_dot_product_target = jax.tree.map(lambda _: 0, self.params)
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
@@ -59,13 +61,15 @@ class ExpTFDQN:
                 q_value_abs_change,
                 target_change,
                 target_abs_change,
+                td_change,
                 dot_product_target,
-            ) = self.learn_on_batch(self.params, self.optimizer_state, batch_samples)
+            ) = self.learn_on_batch(self.params, self.target_params, self.optimizer_state, batch_samples)
             self.cumulated_loss += loss
             self.cumulated_q_value_change += q_value_change
             self.cumulated_q_value_abs_change += q_value_abs_change
             self.cumulated_target_change += target_change
             self.cumulated_target_abs_change += target_abs_change
+            self.cumulated_td_change += td_change
             self.cumulated_dot_product_target = jax.tree.map(
                 lambda cumulated_dot_products_w, dot_products_w: cumulated_dot_products_w + dot_products_w,
                 self.cumulated_dot_product_target,
@@ -74,38 +78,25 @@ class ExpTFDQN:
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
+            self.target_params = self.params.copy()
 
             flatten_cumulated_dot_product_target = flax.traverse_util.flatten_dict(
                 self.cumulated_dot_product_target["params"], sep="_"
             )
-
+            normalizer = self.target_update_frequency / self.data_to_update
             logs = {
-                "loss": self.cumulated_loss / (self.target_update_frequency / self.data_to_update),
+                "loss": self.cumulated_loss / normalizer,
+                "analysis/q_value_change": self.cumulated_q_value_change / normalizer,
+                "analysis/q_value_abs_change": self.cumulated_q_value_abs_change / normalizer,
+                "analysis/target_change": self.cumulated_target_change / normalizer,
+                "analysis/target_abs_change": self.cumulated_target_abs_change / normalizer,
+                "analysis/td_change": self.cumulated_td_change / normalizer,
             }
-
-            logs[f"analysis/q_value_change"] = self.cumulated_q_value_change / (
-                self.target_update_frequency / self.data_to_update
-            )
-            logs[f"analysis/q_value_abs_change"] = self.cumulated_q_value_abs_change / (
-                self.target_update_frequency / self.data_to_update
-            )
-            logs[f"analysis/target_change"] = self.cumulated_target_change / (
-                self.target_update_frequency / self.data_to_update
-            )
-            logs[f"analysis/target_abs_change"] = self.cumulated_target_abs_change / (
-                self.target_update_frequency / self.data_to_update
-            )
             logs.update(
                 dict(
                     zip(
-                        map(
-                            lambda key: f"target_sharing/" + key,
-                            flatten_cumulated_dot_product_target.keys(),
-                        ),
-                        map(
-                            lambda value: value / (self.target_update_frequency / self.data_to_update),
-                            flatten_cumulated_dot_product_target.values(),
-                        ),
+                        map(lambda key: f"target_sharing/{key}", flatten_cumulated_dot_product_target.keys()),
+                        map(lambda value: value / normalizer, flatten_cumulated_dot_product_target.values()),
                     )
                 )
             )
@@ -115,6 +106,7 @@ class ExpTFDQN:
             self.cumulated_q_value_abs_change = 0
             self.cumulated_target_change = 0
             self.cumulated_target_abs_change = 0
+            self.cumulated_td_change = 0
             self.cumulated_dot_product_target = jax.tree.map(
                 lambda dot_products_w: np.zeros_like(dot_products_w), self.cumulated_dot_product_target
             )
@@ -124,7 +116,7 @@ class ExpTFDQN:
         return False, {}
 
     @partial(jax.jit, static_argnames="self")
-    def learn_on_batch(self, params: FrozenDict, optimizer_state, batch_samples):
+    def learn_on_batch(self, params: FrozenDict, params_target: FrozenDict, optimizer_state, batch_samples):
         grad_loss, (
             loss,
             batch_stats,
@@ -132,11 +124,9 @@ class ExpTFDQN:
             q_value_abs_change,
             target_change,
             target_abs_change,
+            td_change,
             dot_product_target,
-        ) = jax.grad(self.loss_on_batch, has_aux=True)(params, batch_samples)
-
-        # Compute dot product between the gradient of the loss and the gradient of each term of the loss
-        grad_loss, _ = jax.grad(self.loss_on_batch, has_aux=True)(params, batch_samples)
+        ) = jax.grad(self.loss_on_batch, has_aux=True)(params, params_target, batch_samples)
 
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
@@ -151,10 +141,11 @@ class ExpTFDQN:
             q_value_abs_change,
             target_change,
             target_abs_change,
+            td_change,
             dot_product_target,
         )
 
-    def loss_on_batch(self, params: FrozenDict, samples):
+    def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
         batch_size = samples.state.shape[0]
         # shape (2 * batch_size, n_actions)
         all_q_values, batch_stats = self.network.apply(
@@ -166,16 +157,21 @@ class ExpTFDQN:
 
         td_loss = jnp.square(q_values - stop_grad_targets)
 
-        # Compute changes in q_values and targets
-        frozen_all_q_values, _ = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
+        # Compute frozen q_values and targets
+        frozen_all_q_values, _ = self.network.apply_fn(
+            params_target, jnp.concatenate((samples.state, samples.next_state))
+        )
         frozen_q_values = jax.vmap(lambda q_value, action: q_value[action])(
             frozen_all_q_values[:batch_size], samples.action
         )
         frozen_targets = jax.vmap(self.compute_target)(samples, frozen_all_q_values[batch_size:])
+
+        # Compute metrics
         q_value_change = (q_values - frozen_q_values) / (frozen_q_values + 1e-9)
         q_value_abs_change = jnp.abs(q_value_change)
         target_change = (targets - frozen_targets) / (frozen_targets + 1e-9)
         target_abs_change = jnp.abs(target_change)
+        td_change = td_loss / (jnp.square(q_values - frozen_targets) + 1e-9)
 
         # Compute the dot products between the gradient w.r.t the online network and the gradient w.r.t the target network
         def compute_q_value(params, samples):
@@ -197,13 +193,14 @@ class ExpTFDQN:
             grads_target,
         )
 
-        return td_loss.mean(axis=0), (
-            td_loss.mean(axis=0),
+        return td_loss.mean(), (
+            td_loss.mean(),
             batch_stats,
-            q_value_change.mean(axis=0),
-            q_value_abs_change.mean(axis=0),
-            target_change.mean(axis=0),
-            target_abs_change.mean(axis=0),
+            q_value_change.mean(),
+            q_value_abs_change.mean(),
+            target_change.mean(),
+            target_abs_change.mean(),
+            td_change.mean(),
             dot_product_target,
         )
 
