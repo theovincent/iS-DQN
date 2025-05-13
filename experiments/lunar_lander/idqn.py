@@ -39,7 +39,6 @@ def run(argvs=sys.argv[1:]):
         update_horizon=p["update_horizon"],
         data_to_update=p["data_to_update"],
         target_update_frequency=p["target_update_frequency"],
-        target_sync_frequency=p["target_sync_frequency"],
     )
     train(train_key, p, agent, env, rb)
 

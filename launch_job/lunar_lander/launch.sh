@@ -5,7 +5,6 @@ SHARED_ARGS="--replay_buffer_capacity 500_000 --batch_size 32 --update_horizon 1
 FEATURE=100
 N_NETWORS=5
 TARGET_UPDATE_FREQ=800
-TARGET_SYNC_FREQ=5
 
 PLATFORM="normal/cluster"  # normal/local
 
@@ -17,12 +16,12 @@ fi
 SHARED_ARGS="$SHARED_ARGS --features $FEATURE $FEATURE --target_update_frequency $TARGET_UPDATE_FREQ"
 
 # ----- L2 Loss -----
-L2_ARGS="--experiment_name L2_N${N_NETWORS}_T${TARGET_UPDATE_FREQ}_D${TARGET_SYNC_FREQ}"
+L2_ARGS="--experiment_name L2_N${N_NETWORS}_T${TARGET_UPDATE_FREQ}"
 
 launch_job/lunar_lander/${PLATFORM}_dqn.sh --first_seed 6 --last_seed 20 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS
 sleep 40
 
-iDQN_ARGS="--n_networks $N_NETWORS --target_sync_frequency $TARGET_SYNC_FREQ"
+iDQN_ARGS="--n_networks $N_NETWORS"
 launch_job/lunar_lander/${PLATFORM}_idqn.sh --first_seed 6 --last_seed 20 --n_parallel_seeds 1 $SHARED_ARGS $L2_ARGS $iDQN_ARGS
 sleep 40
 
@@ -43,13 +42,12 @@ launch_job/lunar_lander/${PLATFORM}_crowngidqn.sh --first_seed 1 --last_seed 5 -
 sleep 600
 
 # ----- KL Loss -----
-KL_ARGS="--experiment_name KL_N${N_NETWORS}_T${TARGET_UPDATE_FREQ}_D${TARGET_SYNC_FREQ} \
-    --n_bins 51 --min_value -100 --max_value 100 --sigma 2.94117647"
+KL_ARGS="--experiment_name KL_N${N_NETWORS}_T${TARGET_UPDATE_FREQ} --n_bins 51 --min_value -100 --max_value 100 --sigma 2.94117647"
 
 launch_job/lunar_lander/${PLATFORM}_hldqn.sh --first_seed 6 --last_seed 20 --n_parallel_seeds 1 $SHARED_ARGS $KL_ARGS
 sleep 40
 
-iHLDQN_ARGS="--n_networks $N_NETWORS --target_sync_frequency $TARGET_SYNC_FREQ"
+iHLDQN_ARGS="--n_networks $N_NETWORS"
 launch_job/lunar_lander/${PLATFORM}_ihldqn.sh --first_seed 6 --last_seed 20 --n_parallel_seeds 1 $SHARED_ARGS $KL_ARGS $iHLDQN_ARGS
 sleep 40
 

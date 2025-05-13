@@ -189,16 +189,6 @@ def add_target_update_frequency(parser: argparse.ArgumentParser):
     )
 
 
-def add_target_sync_frequency(parser: argparse.ArgumentParser):
-    parser.add_argument(
-        "-tcf",
-        "--target_sync_frequency",
-        help="Number of training steps before synchronizing each target Q-network to their online counterpart. (D)",
-        type=int,
-        default=5,
-    )
-
-
 def add_histogram_loss_parameters(parser: argparse.ArgumentParser):
     parser.add_argument(
         "-nb",
@@ -256,7 +246,6 @@ def add_isdqn_arguments(parser: argparse.ArgumentParser):
     add_layer_norm(parser)
     add_batch_norm(parser)
     add_target_update_frequency(parser)
-    add_target_sync_frequency(parser)
 
 
 @output_added_arguments
@@ -265,7 +254,6 @@ def add_expisdqn_arguments(parser: argparse.ArgumentParser):
     add_layer_norm(parser)
     add_batch_norm(parser)
     add_target_update_frequency(parser)
-    add_target_sync_frequency(parser)
 
 
 @output_added_arguments
@@ -287,5 +275,4 @@ def add_ishldqn_arguments(parser: argparse.ArgumentParser):
     add_n_bellman_iterations(parser)
     add_layer_norm(parser)
     add_target_update_frequency(parser)
-    add_target_sync_frequency(parser)
     add_histogram_loss_parameters(parser)

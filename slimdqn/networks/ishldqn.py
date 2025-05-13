@@ -27,7 +27,6 @@ class iSHLDQN:
         update_horizon: int,
         data_to_update: int,
         target_update_frequency: int,
-        target_sync_frequency: int,
         min_value: float,
         max_value: float,
         sigma: float,
@@ -38,11 +37,11 @@ class iSHLDQN:
         self.n_bins = n_bins
         self.last_idx_mlp = len(features) if architecture_type == "fc" else len(features) - 3
         self.network = DQNNet(
-            features, architecture_type, 2 * self.n_bellman_iterations * n_actions * self.n_bins, layer_norm
+            features, architecture_type, (1 + self.n_bellman_iterations) * n_actions * self.n_bins, layer_norm
         )
-        # 2 * self.n_bellman_iterations = [\bar{Q_0}, ..., \bar{Q_K-1}, Q_1, ..., Q_K]
+        # 1 + self.n_bellman_iterations = [\bar{Q_0}, Q_1, ..., Q_K]
         self.network.apply_fn = lambda params, state: jnp.squeeze(
-            self.network.apply(params, state).reshape((-1, 2 * self.n_bellman_iterations, n_actions, self.n_bins))
+            self.network.apply(params, state).reshape((-1, 1 + self.n_bellman_iterations, n_actions, self.n_bins))
         )
         self.params = self.network.init(key, jnp.zeros(observation_dim, dtype=jnp.float32))
 
@@ -53,7 +52,6 @@ class iSHLDQN:
         self.update_horizon = update_horizon
         self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
-        self.target_sync_frequency = target_sync_frequency
         self.cumulated_losses = np.zeros(self.n_bellman_iterations)
         self.cumulated_unsupported_probs = np.zeros(self.n_bellman_iterations)
         self.support = jnp.linspace(min_value, max_value, self.n_bins + 1, dtype=jnp.float32)
@@ -91,9 +89,6 @@ class iSHLDQN:
 
             return True, logs
 
-        if step % self.target_sync_frequency == 0:
-            self.target_params = self.sync_target_params(self.params)
-
         return False, {}
 
     @partial(jax.jit, static_argnames="self")
@@ -106,14 +101,12 @@ class iSHLDQN:
 
     def loss_on_batch(self, params: FrozenDict, samples):
         batch_size = samples.state.shape[0]
-        # shape (2 * batch_size, 2 * n_bellman_iterations, n_actions, n_bins)
+        # shape (2 * batch_size, 1 + n_bellman_iterations, n_actions, n_bins)
         all_q_logits = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
         # shape (batch_size, n_bellman_iterations, n_bins)
-        q_logits = jax.vmap(lambda q_value, action: q_value[:, action])(
-            all_q_logits[:batch_size, self.n_bellman_iterations :], samples.action
-        )
+        q_logits = jax.vmap(lambda q_value, action: q_value[:, action])(all_q_logits[:batch_size, 1:], samples.action)
         # shape (batch_size, n_bellman_iterations)
-        targets = jax.vmap(self.compute_target)(samples, all_q_logits[batch_size:, : -self.n_bellman_iterations])
+        targets = jax.vmap(self.compute_target)(samples, all_q_logits[batch_size:, :-1])
         # shape (batch_size, n_bellman_iterations, n_bins) | (batch_size, n_bellman_iterations)
         projected_targets, unsupported_probs = jax.vmap(jax.vmap(self.project_target_on_support))(targets)
         stop_grad_projected_targets = jax.lax.stop_gradient(projected_targets)
@@ -143,50 +136,32 @@ class iSHLDQN:
 
     @partial(jax.jit, static_argnames="self")
     def shift_params(self, params):
-        # Shift the last weight matrix with shape (last_feature, 2 x n_bellman_iterations x n_actions)
-        # Reminder: 2 * self.n_bellman_iterations = [\bar{Q_0}, ..., \bar{Q_K-1}, Q_1, ..., Q_K]
+        # Shift the last weight matrix with shape (last_feature, (1 + n_bellman_iterations) x n_actions)
+        # Reminder: 1 + self.n_bellman_iterations = [\bar{Q_0}, Q_1, ..., Q_K]
         # Here we shifting: \bar{Q_i} <- Q_i+1
         kernel = params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"]
-        params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"] = kernel.at[
-            :, : self.n_bellman_iterations * self.n_actions * self.n_bins
-        ].set(kernel[:, self.n_bellman_iterations * self.n_actions * self.n_bins :])
+        params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"] = kernel.at[:, : -self.n_actions * self.n_bins].set(
+            kernel[:, self.n_actions * self.n_bins :]
+        )
 
-        # Shift the last bias vector with shape (2 x n_bellman_iterations x n_actions)
+        # Shift the last bias vector with shape ((1 + n_bellman_iterations) x n_actions)
         bias = params["params"][f"Dense_{self.last_idx_mlp}"]["bias"]
-        params["params"][f"Dense_{self.last_idx_mlp}"]["bias"] = bias.at[
-            : self.n_bellman_iterations * self.n_actions * self.n_bins
-        ].set(bias[self.n_bellman_iterations * self.n_actions * self.n_bins :])
-
-        return params
-
-    @partial(jax.jit, static_argnames="self")
-    def sync_target_params(self, params):
-        # Synchronize the last weight matrix with shape (last_feature, 2 x n_bellman_iterations x n_actions)
-        # Reminder: 2 * self.n_bellman_iterations = [\bar{Q_0}, ..., \bar{Q_K-1}, Q_1, ..., Q_K]
-        # Here we synchronize: \bar{Q_i} <- Q_i
-        kernel = params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"]
-        params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"] = kernel.at[
-            :, self.n_actions * self.n_bins : self.n_bellman_iterations * self.n_actions * self.n_bins
-        ].set(kernel[:, self.n_bellman_iterations * self.n_actions * self.n_bins : -self.n_actions * self.n_bins])
-
-        # Synchronize the last bias vector with shape (2 x n_bellman_iterations x n_actions)
-        bias = params["params"][f"Dense_{self.last_idx_mlp}"]["bias"]
-        params["params"][f"Dense_{self.last_idx_mlp}"]["bias"] = bias.at[
-            self.n_actions * self.n_bins : self.n_bellman_iterations * self.n_actions * self.n_bins
-        ].set(bias[self.n_bellman_iterations * self.n_actions * self.n_bins : -self.n_actions * self.n_bins])
+        params["params"][f"Dense_{self.last_idx_mlp}"]["bias"] = bias.at[: -self.n_actions * self.n_bins].set(
+            bias[self.n_actions * self.n_bins :]
+        )
 
         return params
 
     @partial(jax.jit, static_argnames="self")
     def best_action(self, params: FrozenDict, state: jnp.ndarray, key: jax.Array):
         idx_network = jax.random.randint(key, (), 0, self.n_bellman_iterations)
-        # shape (2 * n_bellman_iterations, n_actions, n_bins)
+        # shape (1 + n_bellman_iterations, n_actions, n_bins)
         q_logits = self.network.apply_fn(params, state)
 
         # computes the best action for a single state
         # We first compute the probabilities by applying the softmax on the last axis (bin axis).
         # Then, we compute the expectation by multiplying with the bin centers.
-        return jnp.argmax(jax.nn.softmax(q_logits[self.n_bellman_iterations + idx_network]) @ self.bin_centers)
+        return jnp.argmax(jax.nn.softmax(q_logits[1 + idx_network]) @ self.bin_centers)
 
     def get_model(self):
         return {"params": self.params}
