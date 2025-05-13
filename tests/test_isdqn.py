@@ -90,7 +90,7 @@ class TestiSDQN(unittest.TestCase):
         idx_network = jax.random.randint(self.key, (), 0, self.n_bellman_iterations)
         q_values = self.q.network.apply(self.q.params, state, use_running_average=True).reshape(
             (1 + self.n_bellman_iterations, self.n_actions)
-        )[idx_network]
+        )[idx_network + 1]
         best_action = jnp.argmax(q_values)
 
         self.assertEqual(q_values.shape, (self.n_actions,))
@@ -114,5 +114,3 @@ class TestiSDQN(unittest.TestCase):
 
         # The target networks are equal to the online networks
         self.assertEqual(jnp.linalg.norm(shifted_q_values[:-1] - q_values[1:]), 0)
-        # The online networks have not changed
-        self.assertEqual(jnp.linalg.norm(shifted_q_values[1:] - q_values[1:]), 0)

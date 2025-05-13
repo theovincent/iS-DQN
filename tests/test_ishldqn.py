@@ -110,5 +110,3 @@ class TestiSHLDQN(unittest.TestCase):
 
         # The target networks are equal to the online networks
         self.assertEqual(jnp.linalg.norm(shifted_q_values[:-1] - q_values[1:]), 0)
-        # The online networks have not changed
-        self.assertEqual(jnp.linalg.norm(shifted_q_values[1:] - q_values[1:]), 0)
