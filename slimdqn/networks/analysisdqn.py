@@ -54,9 +54,8 @@ class AnalysisDQN:
         self.cumulated_losses = np.zeros(self.n_bellman_iterations)
         self.cumulated_td_diff_tf = 0
         self.cumulated_td_diff_is = 0
-        self.cumulated_td_tb = 0
-        self.cumulated_param_distance_tf = 0
-        self.cumulated_param_distance_is = 0
+        self.cumulated_td_is_to_tf = 0
+        self.cumulated_param_distance_tf_to_is = 0
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
         if step % self.data_to_update == 0:
@@ -68,57 +67,121 @@ class AnalysisDQN:
                 losses,
                 td_diff_tf,
                 td_diff_is,
-                td_tb,
-                param_distance_tf,
-                param_distance_is,
-            ) = self.learn_on_batch(self.params, self.optimizer_state, batch_samples)
+                td_is_to_tf,
+                param_distance_tf_to_is,
+            ) = self.learn_on_batch(self.params, self.target_params, self.optimizer_state, batch_samples)
             self.cumulated_losses += losses
             self.cumulated_td_diff_tf += td_diff_tf
             self.cumulated_td_diff_is += td_diff_is
-            self.cumulated_td_tb += td_tb
-            self.cumulated_param_distance_tf += param_distance_tf
-            self.cumulated_param_distance_is += param_distance_is
+            self.cumulated_td_is_to_tf += td_is_to_tf
+            self.cumulated_param_distance_tf_to_is += param_distance_tf_to_is
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
             # Window shift
+            self.target_params = self.params.copy()
             self.params = self.shift_params(self.params)
 
+            normalizer = self.target_update_frequency / self.data_to_update
             logs = {
-                "loss": np.mean(self.cumulated_losses) / (self.target_update_frequency / self.data_to_update),
+                "loss": np.mean(self.cumulated_losses) / normalizer,
+                "analysis/td_diff_TF": self.cumulated_td_diff_tf / normalizer,
+                "analysis/td_diff_iS": self.cumulated_td_diff_is / normalizer,
+                "analysis/td_diff_iS_to_TF": self.cumulated_td_is_to_tf / normalizer,
+                "analysis/param_distance_TF_to_IS": self.cumulated_param_distance_tf_to_is / normalizer,
             }
             for idx_network in range(min(self.n_bellman_iterations, 5)):
-                logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
-                    self.target_update_frequency / self.data_to_update
-                )
+                logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / normalizer
+
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
+            self.cumulated_td_diff_tf = 0
+            self.cumulated_td_diff_is = 0
+            self.cumulated_td_is_to_tf = 0
+            self.cumulated_param_distance_tf_to_is = 0
 
             return True, logs
 
         return False, {}
 
     @partial(jax.jit, static_argnames="self")
-    def learn_on_batch(self, params: FrozenDict, optimizer_state, batch_samples):
-        grad_loss, (losses, batch_stats) = jax.grad(self.loss_on_batch, has_aux=True)(params, batch_samples)
+    def learn_on_batch(self, params: FrozenDict, params_target, optimizer_state, batch_samples):
+        grad_loss, (losses, batch_stats, td_diff_tf, td_diff_is, td_is_to_tf, param_distance_tf_to_is) = jax.grad(
+            self.loss_on_batch, has_aux=True
+        )(params, params_target, batch_samples)
+
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
         if self.network.batch_norm:
             params["batch_stats"] = batch_stats["batch_stats"]
 
-        return params, optimizer_state, losses
+        return (params, optimizer_state, losses, td_diff_tf, td_diff_is, td_is_to_tf, param_distance_tf_to_is)
 
-    def loss_on_batch(self, params: FrozenDict, samples):
+    def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
         batch_size = samples.state.shape[0]
-        # shape (2 * batch_size, 1 + n_bellman_iterations, n_actions) | Dict
-        all_q_values, batch_stats = self.network.apply_fn(params, jnp.concatenate((samples.state, samples.next_state)))
-        # shape (batch_size, n_bellman_iterations)
-        q_values = jax.vmap(lambda q_value, action: q_value[:, action])(all_q_values[:batch_size, 1:], samples.action)
-        targets = jax.vmap(self.compute_target)(samples, all_q_values[batch_size:, :-1])
-        stop_grad_targets = jax.lax.stop_gradient(targets)
 
-        # shape (batch_size, n_bellman_iterations)
-        td_losses = jnp.square(q_values - stop_grad_targets)
-        return td_losses.mean(axis=0).sum(), (td_losses.mean(axis=0), batch_stats)
+        def compute_loss_tb(params, params_target, samples):
+            q_values, _ = self.network.apply_fn(params, samples.state)
+            next_q_values, _ = self.network.apply_fn(params_target, samples.next_state)
+            targets = jax.vmap(self.compute_target)(
+                samples, next_q_values[:, 1]
+            )  # first head is used for online and target when full network copied
+            td_tb = jax.vmap(lambda q, a: q[a])(q_values[:, 1], samples.action) - jax.lax.stop_gradient(targets)
+            return jnp.square(td_tb).mean(axis=0), td_tb
+
+        def compute_loss_tf(params, samples):
+            q_values, _ = self.network.apply_fn(params, samples.state)
+            next_q_values, _ = self.network.apply_fn(params, samples.next_state)
+            targets = jax.vmap(self.compute_target)(samples, next_q_values[:, 1])
+            # first head is used for online and target computation in TF
+            td_tf = jax.vmap(lambda q, a: q[a])(q_values[:, 1], samples.action) - jax.lax.stop_gradient(targets)
+            return jnp.square(td_tf).mean(axis=0), td_tf
+
+        def compute_loss_is(params, samples):
+            all_q_values, batch_stats = self.network.apply_fn(
+                params, jnp.concatenate((samples.state, samples.next_state))
+            )
+            q_values = jax.vmap(lambda q_value, action: q_value[:, action])(
+                all_q_values[:batch_size, 1:], samples.action
+            )
+            targets = jax.vmap(self.compute_target)(samples, all_q_values[batch_size:, :-1])
+            td_is = q_values - jax.lax.stop_gradient(targets)
+            return jnp.square(td_is).mean(axis=0).sum(), (batch_stats, td_is.mean(axis=0), td_is[:, 0])
+
+        grad_tb, td_tb = jax.grad(compute_loss_tb, has_aux=True)(params, params_target, samples)
+        grad_tf, td_tf = jax.grad(compute_loss_tf, has_aux=True)(params, samples)
+        grad_is, (batch_stats, td_losses_is, td_is_k1) = jax.grad(compute_loss_is, has_aux=True)(params, samples)
+
+        def extract_feature_gradients(gradients):
+            feature_extractor_grads = []
+            last_dense_key = sorted(
+                [key for key in gradients["params"].keys() if "Dense" in key], key=lambda x: int(x.split("_")[-1])
+            )[-1]
+            for key in gradients["params"].keys():
+                if "Conv" in key:
+                    feature_extractor_grads.append(gradients["params"][key]["kernel"].reshape(-1))
+                    feature_extractor_grads.append(gradients["params"][key]["bias"].reshape(-1))
+                elif "Stack" in key:
+                    for stack_key in gradients["params"][key].keys():
+                        if "Conv" in stack_key or "Dense" in stack_key:
+                            feature_extractor_grads.append(gradients["params"][key][stack_key]["kernel"].reshape(-1))
+                            feature_extractor_grads.append(gradients["params"][key][stack_key]["bias"].reshape(-1))
+                elif "Dense" in key and key != last_dense_key:
+                    feature_extractor_grads.append(gradients["params"][key]["kernel"].reshape(-1))
+                    feature_extractor_grads.append(gradients["params"][key]["bias"].reshape(-1))
+            return jnp.concat(feature_extractor_grads)
+
+        grad_tb = extract_feature_gradients(grad_tb)
+        grad_tf = extract_feature_gradients(grad_tf)
+        grad_is = extract_feature_gradients(grad_is)
+
+        return compute_loss_is(params, samples)[0], (
+            td_losses_is,
+            batch_stats,
+            jnp.mean(jnp.abs(td_tf - td_tb) / (jnp.abs(td_tb) + 1e-9)),
+            jnp.mean(jnp.abs(td_is_k1 - td_tb) / (jnp.abs(td_tb) + 1e-9)),
+            jnp.mean(jnp.abs(td_is_k1 - td_tb) / (jnp.abs(td_tf - td_tb) + 1e-9)),
+            jnp.mean(jnp.linalg.norm(grad_tf - grad_tb) / (jnp.linalg.norm(grad_is - grad_tb) + 1e-9)),
+        )
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
         # shape of next_q_values (n_bellman_iterations, next_states, n_actions)

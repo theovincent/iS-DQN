@@ -257,6 +257,14 @@ def add_expisdqn_arguments(parser: argparse.ArgumentParser):
 
 
 @output_added_arguments
+def add_analysisdqn_arguments(parser: argparse.ArgumentParser):
+    add_n_bellman_iterations(parser)
+    add_layer_norm(parser)
+    add_batch_norm(parser)
+    add_target_update_frequency(parser)
+
+
+@output_added_arguments
 def add_hldqn_arguments(parser: argparse.ArgumentParser):
     add_layer_norm(parser)
     add_target_update_frequency(parser)
