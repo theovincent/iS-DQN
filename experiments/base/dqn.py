@@ -53,9 +53,9 @@ def train(
                     logs = {"n_training_steps": n_training_steps, **logs}
                     if p["analysis"]:
                         analysis_logs_at_target_update = eval_srank_and_dead_neurons(agent.params, rb, p)
+                        logs.update(analysis_logs_at_target_update)
                         for metric in analysis_logs:
                             analysis_logs[metric].append(analysis_logs_at_target_update[metric])
-                        logs = {**analysis_logs_at_target_update, **logs}
                     p["wandb"].log(logs)
 
         avg_return = np.mean(episode_returns_per_epoch[idx_epoch])
