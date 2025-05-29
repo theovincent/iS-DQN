@@ -4,6 +4,7 @@ import optax
 from tqdm import tqdm
 
 from experiments.base.utils import save_data
+from experiments.base.srank_and_dead_neurons import eval_srank_and_dead_neurons
 from slimdqn.networks.dqn import DQN
 from slimdqn.sample_collection.replay_buffer import ReplayBuffer
 from slimdqn.sample_collection.utils import collect_single_sample
@@ -23,6 +24,7 @@ def train(
     episode_returns_per_epoch = [[0]]
     episode_lengths_per_epoch = [[0]]
     best_avg_return = -float("inf")
+    analysis_logs = {"srank": [], "dead_neurons": []}
 
     for idx_epoch in tqdm(range(p["n_epochs"])):
         n_training_steps_epoch = 0
@@ -48,7 +50,13 @@ def train(
                 target_updated, logs = agent.update_target_params(n_training_steps)
 
                 if target_updated:
-                    p["wandb"].log({"n_training_steps": n_training_steps, **logs})
+                    logs = {"n_training_steps": n_training_steps, **logs}
+                    if p["analysis"]:
+                        analysis_logs_at_target_update = eval_srank_and_dead_neurons(agent.params, rb, p)
+                        for metric in analysis_logs:
+                            analysis_logs[metric].append(analysis_logs_at_target_update[metric])
+                        logs = {**analysis_logs_at_target_update, **logs}
+                    p["wandb"].log(logs)
 
         avg_return = np.mean(episode_returns_per_epoch[idx_epoch])
         avg_length_episode = np.mean(episode_lengths_per_epoch[idx_epoch])
@@ -74,4 +82,4 @@ def train(
             episode_returns_per_epoch.append([0])
             episode_lengths_per_epoch.append([0])
 
-        save_data(p, episode_returns_per_epoch, episode_lengths_per_epoch, agent_to_save)
+        save_data(p, episode_returns_per_epoch, episode_lengths_per_epoch, agent_to_save, analysis_logs)

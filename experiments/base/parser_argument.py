@@ -147,6 +147,13 @@ def add_base_arguments(parser: argparse.ArgumentParser):
         type=float,
         default=1_000,
     )
+    parser.add_argument(
+        "-a",
+        "--analysis",
+        help="Flag to run analysis with the algorithm (srank and dormant neurons).",
+        default=False,
+        action="store_true",
+    )
 
 
 def add_n_bellman_iterations(parser: argparse.ArgumentParser):
