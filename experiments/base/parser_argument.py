@@ -234,22 +234,7 @@ def add_tfdqn_arguments(parser: argparse.ArgumentParser):
 
 
 @output_added_arguments
-def add_exptfdqn_arguments(parser: argparse.ArgumentParser):
-    add_layer_norm(parser)
-    add_batch_norm(parser)
-    add_target_update_frequency(parser)
-
-
-@output_added_arguments
 def add_isdqn_arguments(parser: argparse.ArgumentParser):
-    add_n_bellman_iterations(parser)
-    add_layer_norm(parser)
-    add_batch_norm(parser)
-    add_target_update_frequency(parser)
-
-
-@output_added_arguments
-def add_expisdqn_arguments(parser: argparse.ArgumentParser):
     add_n_bellman_iterations(parser)
     add_layer_norm(parser)
     add_batch_norm(parser)
