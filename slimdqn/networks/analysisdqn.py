@@ -53,10 +53,10 @@ class AnalysisDQN:
         self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
         self.cumulated_losses = np.zeros(self.n_bellman_iterations)
-        self.cumulated_td_diff_tf = 0
         self.cumulated_td_diff_is = 0
-        self.cumulated_td_is_to_tf = 0
-        self.cumulated_param_distance_tf_to_is = 0
+        self.cumulated_td_diff_tf = 0
+        self.cumulated_param_distance_is_to_tb = 0
+        self.cumulated_param_distance_tf_to_tb = 0
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
         if step % self.data_to_update == 0:
@@ -66,16 +66,16 @@ class AnalysisDQN:
                 self.params,
                 self.optimizer_state,
                 losses,
-                td_diff_tf,
                 td_diff_is,
-                td_is_to_tf,
-                param_distance_tf_to_is,
+                td_diff_tf,
+                param_distance_is_to_tb,
+                param_distance_tf_to_tb,
             ) = self.learn_on_batch(self.params, self.target_params, self.optimizer_state, batch_samples)
             self.cumulated_losses += losses
-            self.cumulated_td_diff_tf += td_diff_tf
             self.cumulated_td_diff_is += td_diff_is
-            self.cumulated_td_is_to_tf += td_is_to_tf
-            self.cumulated_param_distance_tf_to_is += param_distance_tf_to_is
+            self.cumulated_td_diff_tf += td_diff_tf
+            self.cumulated_param_distance_is_to_tb += param_distance_is_to_tb
+            self.cumulated_param_distance_tf_to_tb += param_distance_tf_to_tb
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
@@ -86,19 +86,19 @@ class AnalysisDQN:
             normalizer = self.target_update_frequency / self.data_to_update
             logs = {
                 "loss": np.mean(self.cumulated_losses) / normalizer,
-                "analysis/td_diff_TF": self.cumulated_td_diff_tf / normalizer,
                 "analysis/td_diff_iS": self.cumulated_td_diff_is / normalizer,
-                "analysis/td_diff_iS_to_TF": self.cumulated_td_is_to_tf / normalizer,
-                "analysis/param_distance_TF_to_IS": self.cumulated_param_distance_tf_to_is / normalizer,
+                "analysis/td_diff_TF": self.cumulated_td_diff_tf / normalizer,
+                "analysis/param_distance_iS_to_TB": self.cumulated_param_distance_is_to_tb / normalizer,
+                "analysis/param_distance_TF_to_TB": self.cumulated_param_distance_tf_to_tb / normalizer,
             }
             for idx_network in range(min(self.n_bellman_iterations, 5)):
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / normalizer
 
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
-            self.cumulated_td_diff_tf = 0
             self.cumulated_td_diff_is = 0
-            self.cumulated_td_is_to_tf = 0
-            self.cumulated_param_distance_tf_to_is = 0
+            self.cumulated_td_diff_tf = 0
+            self.cumulated_param_distance_is_to_tb = 0
+            self.cumulated_param_distance_tf_to_tb = 0
 
             return True, logs
 
@@ -106,16 +106,24 @@ class AnalysisDQN:
 
     @partial(jax.jit, static_argnames="self")
     def learn_on_batch(self, params: FrozenDict, params_target, optimizer_state, batch_samples):
-        grad_loss, (losses, batch_stats, td_diff_tf, td_diff_is, td_is_to_tf, param_distance_tf_to_is) = jax.grad(
-            self.loss_on_batch, has_aux=True
-        )(params, params_target, batch_samples)
+        grad_loss, (losses, batch_stats, td_diff_is, td_diff_tf, param_distance_is_to_tb, param_distance_tf_to_tb) = (
+            jax.grad(self.loss_on_batch, has_aux=True)(params, params_target, batch_samples)
+        )
 
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
         if self.network.batch_norm:
             params["batch_stats"] = batch_stats["batch_stats"]
 
-        return (params, optimizer_state, losses, td_diff_tf, td_diff_is, td_is_to_tf, param_distance_tf_to_is)
+        return (
+            params,
+            optimizer_state,
+            losses,
+            td_diff_is,
+            td_diff_tf,
+            param_distance_is_to_tb,
+            param_distance_tf_to_tb,
+        )
 
     def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
         batch_size = samples.state.shape[0]
@@ -171,10 +179,10 @@ class AnalysisDQN:
         return compute_loss_is(params, samples)[0], (
             td_losses_is,
             batch_stats,
-            jnp.mean(jnp.abs(td_tf - td_tb) / (jnp.abs(td_tb) + 1e-9)),
-            jnp.mean(jnp.abs(td_is_k1 - td_tb) / (jnp.abs(td_tb) + 1e-9)),
-            jnp.mean(jnp.abs(td_is_k1 - td_tb) / (jnp.abs(td_tf - td_tb) + 1e-9)),
-            jnp.mean(jnp.linalg.norm(grad_tf - grad_tb)) / (jnp.mean(jnp.linalg.norm(grad_is - grad_tb)) + 1e-9),
+            jnp.mean(jnp.abs(td_is_k1 - td_tb)),
+            jnp.mean(jnp.abs(td_tf - td_tb)),
+            jnp.linalg.norm(grad_is - grad_tb),
+            jnp.linalg.norm(grad_tf - grad_tb),
         )
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
