@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
+import flax
 from flax.core import FrozenDict
 
 from slimdqn.networks.architectures.dqn import DQNNet
@@ -119,26 +120,26 @@ class AnalysisDQN:
     def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
         batch_size = samples.state.shape[0]
 
-        def compute_loss_tb(params, params_target, samples):
-            q_values, _ = self.network.apply_fn(params, samples.state)
-            next_q_values, _ = self.network.apply_fn(params_target, samples.next_state)
+        def compute_loss_tb(_params, _params_target, samples):
+            q_values, _ = self.network.apply_fn(_params, samples.state)
+            next_q_values, _ = self.network.apply_fn(_params_target, samples.next_state)
             targets = jax.vmap(self.compute_target)(
                 samples, next_q_values[:, 1]
             )  # first head is used for online and target when full network copied
             td_tb = jax.vmap(lambda q, a: q[a])(q_values[:, 1], samples.action) - jax.lax.stop_gradient(targets)
             return jnp.square(td_tb).mean(axis=0), td_tb
 
-        def compute_loss_tf(params, samples):
-            q_values, _ = self.network.apply_fn(params, samples.state)
-            next_q_values, _ = self.network.apply_fn(params, samples.next_state)
-            targets = jax.vmap(self.compute_target)(samples, next_q_values[:, 1])
+        def compute_loss_tf(_params, samples):
+            all_q_values, _ = self.network.apply_fn(_params, jnp.concatenate((samples.state, samples.next_state)))
+            q_values = jax.vmap(lambda q, a: q[a])(all_q_values[:batch_size, 1], samples.action)
+            targets = jax.vmap(self.compute_target)(samples, all_q_values[batch_size:, 1])
             # first head is used for online and target computation in TF
-            td_tf = jax.vmap(lambda q, a: q[a])(q_values[:, 1], samples.action) - jax.lax.stop_gradient(targets)
+            td_tf = q_values - jax.lax.stop_gradient(targets)
             return jnp.square(td_tf).mean(axis=0), td_tf
 
-        def compute_loss_is(params, samples):
+        def compute_loss_is(_params, samples):
             all_q_values, batch_stats = self.network.apply_fn(
-                params, jnp.concatenate((samples.state, samples.next_state))
+                _params, jnp.concatenate((samples.state, samples.next_state))
             )
             q_values = jax.vmap(lambda q_value, action: q_value[:, action])(
                 all_q_values[:batch_size, 1:], samples.action
@@ -152,23 +153,16 @@ class AnalysisDQN:
         grad_is, (batch_stats, td_losses_is, td_is_k1) = jax.grad(compute_loss_is, has_aux=True)(params, samples)
 
         def extract_feature_gradients(gradients):
-            feature_extractor_grads = []
-            last_dense_key = sorted(
-                [key for key in gradients["params"].keys() if "Dense" in key], key=lambda x: int(x.split("_")[-1])
-            )[-1]
-            for key in gradients["params"].keys():
-                if "Conv" in key:
-                    feature_extractor_grads.append(gradients["params"][key]["kernel"].reshape(-1))
-                    feature_extractor_grads.append(gradients["params"][key]["bias"].reshape(-1))
-                elif "Stack" in key:
-                    for stack_key in gradients["params"][key].keys():
-                        if "Conv" in stack_key or "Dense" in stack_key:
-                            feature_extractor_grads.append(gradients["params"][key][stack_key]["kernel"].reshape(-1))
-                            feature_extractor_grads.append(gradients["params"][key][stack_key]["bias"].reshape(-1))
-                elif "Dense" in key and key != last_dense_key:
-                    feature_extractor_grads.append(gradients["params"][key]["kernel"].reshape(-1))
-                    feature_extractor_grads.append(gradients["params"][key]["bias"].reshape(-1))
-            return jnp.concat(feature_extractor_grads)
+            del gradients["params"][f"Dense_{self.last_idx_mlp}"]
+            return jnp.concat(
+                [
+                    value_grad.reshape(-1)
+                    for key_grad, value_grad in sorted(
+                        flax.traverse_util.flatten_dict(gradients).items(), key=lambda x: "/".join(x[0])
+                    )
+                    if not any("norm" in key_part.lower() for key_part in key_grad)
+                ]
+            )
 
         grad_tb = extract_feature_gradients(grad_tb)
         grad_tf = extract_feature_gradients(grad_tf)
@@ -180,7 +174,7 @@ class AnalysisDQN:
             jnp.mean(jnp.abs(td_tf - td_tb) / (jnp.abs(td_tb) + 1e-9)),
             jnp.mean(jnp.abs(td_is_k1 - td_tb) / (jnp.abs(td_tb) + 1e-9)),
             jnp.mean(jnp.abs(td_is_k1 - td_tb) / (jnp.abs(td_tf - td_tb) + 1e-9)),
-            jnp.mean(jnp.linalg.norm(grad_tf - grad_tb) / (jnp.linalg.norm(grad_is - grad_tb) + 1e-9)),
+            jnp.mean(jnp.linalg.norm(grad_tf - grad_tb)) / (jnp.mean(jnp.linalg.norm(grad_is - grad_tb)) + 1e-9),
         )
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
