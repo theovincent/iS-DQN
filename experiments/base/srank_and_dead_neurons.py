@@ -9,8 +9,8 @@ def eval_srank_and_dead_neurons(params, rb: ReplayBuffer, p):
     q_network = AnalysisNet(
         p["features"],
         p["architecture_type"],
-        p["layer_norm"],
-        p["batch_norm"],
+        p.get("layer_norm", False),
+        p.get("batch_norm", False),
     )
 
     samples = rb.sample(size=2048)  # Typically 2048 used for srank
