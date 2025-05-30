@@ -154,7 +154,7 @@ class AnalysisDQN:
             )
             targets = jax.vmap(self.compute_target)(samples, all_q_values[batch_size:, :-1])
             td_is = q_values - jax.lax.stop_gradient(targets)
-            return jnp.square(td_is).mean(axis=0).sum(), (batch_stats, td_is.mean(axis=0), td_is[:, 0])
+            return jnp.square(td_is).mean(axis=0).sum(), (batch_stats, jnp.square(td_is).mean(axis=0), td_is[:, 0])
 
         grad_tb, td_tb = jax.grad(compute_loss_tb, has_aux=True)(params, params_target, samples)
         grad_tf, td_tf = jax.grad(compute_loss_tf, has_aux=True)(params, samples)
@@ -176,7 +176,7 @@ class AnalysisDQN:
         grad_tf = extract_feature_gradients(grad_tf)
         grad_is = extract_feature_gradients(grad_is)
 
-        return compute_loss_is(params, samples)[0], (
+        return td_losses_is.sum(), (
             td_losses_is,
             batch_stats,
             jnp.mean(jnp.abs(td_is_k1 - td_tb)),
