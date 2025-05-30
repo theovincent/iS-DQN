@@ -147,6 +147,13 @@ def add_base_arguments(parser: argparse.ArgumentParser):
         type=float,
         default=1_000,
     )
+    parser.add_argument(
+        "-a",
+        "--analysis",
+        help="Flag to run analysis with the algorithm (srank and dormant neurons).",
+        default=False,
+        action="store_true",
+    )
 
 
 def add_n_bellman_iterations(parser: argparse.ArgumentParser):
@@ -234,13 +241,6 @@ def add_tfdqn_arguments(parser: argparse.ArgumentParser):
 
 
 @output_added_arguments
-def add_exptfdqn_arguments(parser: argparse.ArgumentParser):
-    add_layer_norm(parser)
-    add_batch_norm(parser)
-    add_target_update_frequency(parser)
-
-
-@output_added_arguments
 def add_isdqn_arguments(parser: argparse.ArgumentParser):
     add_n_bellman_iterations(parser)
     add_layer_norm(parser)
@@ -249,7 +249,7 @@ def add_isdqn_arguments(parser: argparse.ArgumentParser):
 
 
 @output_added_arguments
-def add_expisdqn_arguments(parser: argparse.ArgumentParser):
+def add_analysisdqn_arguments(parser: argparse.ArgumentParser):
     add_n_bellman_iterations(parser)
     add_layer_norm(parser)
     add_batch_norm(parser)
