@@ -57,6 +57,8 @@ class AnalysisDQN:
         self.cumulated_td_diff_tf = 0
         self.cumulated_param_distance_is_to_tb = 0
         self.cumulated_param_distance_tf_to_tb = 0
+        self.cumulated_cosine_sim_is_to_tb = 0
+        self.cumulated_cosine_sim_tf_to_tb = 0
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
         if step % self.data_to_update == 0:
@@ -70,12 +72,16 @@ class AnalysisDQN:
                 td_diff_tf,
                 param_distance_is_to_tb,
                 param_distance_tf_to_tb,
+                cosine_sim_is_to_tb,
+                cosine_sim_tf_to_tb,
             ) = self.learn_on_batch(self.params, self.target_params, self.optimizer_state, batch_samples)
             self.cumulated_losses += losses
             self.cumulated_td_diff_is += td_diff_is
             self.cumulated_td_diff_tf += td_diff_tf
             self.cumulated_param_distance_is_to_tb += param_distance_is_to_tb
             self.cumulated_param_distance_tf_to_tb += param_distance_tf_to_tb
+            self.cumulated_cosine_sim_is_to_tb += cosine_sim_is_to_tb
+            self.cumulated_cosine_sim_tf_to_tb += cosine_sim_tf_to_tb
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
@@ -90,6 +96,8 @@ class AnalysisDQN:
                 "analysis/td_diff_TF": self.cumulated_td_diff_tf / normalizer,
                 "analysis/param_distance_iS_to_TB": self.cumulated_param_distance_is_to_tb / normalizer,
                 "analysis/param_distance_TF_to_TB": self.cumulated_param_distance_tf_to_tb / normalizer,
+                "analysis/cosine_sim_iS_to_TB": self.cumulated_cosine_sim_is_to_tb / normalizer,
+                "analysis/cosine_sim_TF_to_TB": self.cumulated_cosine_sim_tf_to_tb / normalizer,
             }
             for idx_network in range(min(self.n_bellman_iterations, 5)):
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / normalizer
@@ -99,6 +107,8 @@ class AnalysisDQN:
             self.cumulated_td_diff_tf = 0
             self.cumulated_param_distance_is_to_tb = 0
             self.cumulated_param_distance_tf_to_tb = 0
+            self.cumulated_cosine_sim_is_to_tb = 0
+            self.cumulated_cosine_sim_tf_to_tb = 0
 
             return True, logs
 
@@ -106,9 +116,16 @@ class AnalysisDQN:
 
     @partial(jax.jit, static_argnames="self")
     def learn_on_batch(self, params: FrozenDict, params_target, optimizer_state, batch_samples):
-        grad_loss, (losses, batch_stats, td_diff_is, td_diff_tf, param_distance_is_to_tb, param_distance_tf_to_tb) = (
-            jax.grad(self.loss_on_batch, has_aux=True)(params, params_target, batch_samples)
-        )
+        grad_loss, (
+            losses,
+            batch_stats,
+            td_diff_is,
+            td_diff_tf,
+            param_distance_is_to_tb,
+            param_distance_tf_to_tb,
+            cosine_sim_is_to_tb,
+            cosine_sim_tf_to_tb,
+        ) = jax.grad(self.loss_on_batch, has_aux=True)(params, params_target, batch_samples)
 
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
@@ -123,6 +140,8 @@ class AnalysisDQN:
             td_diff_tf,
             param_distance_is_to_tb,
             param_distance_tf_to_tb,
+            cosine_sim_is_to_tb,
+            cosine_sim_tf_to_tb,
         )
 
     def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
@@ -161,7 +180,12 @@ class AnalysisDQN:
         grad_is, (batch_stats, td_losses_is, td_is_k1) = jax.grad(compute_loss_is, has_aux=True)(params, samples)
 
         def extract_feature_gradients(gradients):
-            del gradients["params"][f"Dense_{self.last_idx_mlp}"]
+            gradients["params"][f"Dense_{self.last_idx_mlp}"]["kernel"] = gradients["params"][
+                f"Dense_{self.last_idx_mlp}"
+            ]["kernel"][:, self.n_actions : 2 * self.n_actions]
+            gradients["params"][f"Dense_{self.last_idx_mlp}"]["bias"] = gradients["params"][
+                f"Dense_{self.last_idx_mlp}"
+            ]["bias"][self.n_actions : 2 * self.n_actions]
             return jnp.concat(
                 [
                     value_grad.reshape(-1)
@@ -183,6 +207,8 @@ class AnalysisDQN:
             jnp.mean(jnp.abs(td_tf - td_tb)),
             jnp.linalg.norm(grad_is - grad_tb),
             jnp.linalg.norm(grad_tf - grad_tb),
+            jnp.dot(grad_is, grad_tb) / (jnp.linalg.norm(grad_is) * jnp.linalg.norm(grad_tb) + 1e-9),
+            jnp.dot(grad_tf, grad_tb) / (jnp.linalg.norm(grad_tf) * jnp.linalg.norm(grad_tb) + 1e-9),
         )
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
