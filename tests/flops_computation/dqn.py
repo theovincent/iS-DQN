@@ -79,7 +79,7 @@ class DQN:
         # computes the loss for a single sample
         target = self.compute_target(params_target, sample)
         q_value = self.network.apply(params, sample.state)[sample.action]
-        return jnp.square(q_value - jax.lax.stop_gradient(target))
+        return jnp.square(q_value - target)
 
     def compute_target(self, params: FrozenDict, sample: ReplayElement):
         # computes the target value for single sample

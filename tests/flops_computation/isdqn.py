@@ -7,7 +7,7 @@ import optax
 from flax.core import FrozenDict
 
 from slimdqn.networks.architectures.dqn import DQNNet
-from slimdqn.sample_collection.replay_buffer import ReplayElement
+from slimdqn.sample_collection.replay_buffer import ReplayBuffer, ReplayElement
 
 
 class iSDQN:
@@ -19,6 +19,7 @@ class iSDQN:
         n_bellman_iterations: int,
         features: list,
         layer_norm: bool,
+        batch_norm: bool,
         architecture_type: str,
         learning_rate: float,
         gamma: float,
@@ -31,7 +32,7 @@ class iSDQN:
         self.n_actions = n_actions
         self.last_idx_mlp = len(features) if architecture_type == "fc" else len(features) - 3
         self.network = DQNNet(
-            features, architecture_type, (1 + self.n_bellman_iterations) * n_actions, layer_norm, False
+            features, architecture_type, (1 + self.n_bellman_iterations) * n_actions, layer_norm, batch_norm
         )
 
         # 1 + self.n_bellman_iterations = [\bar{Q_0}, Q_1, ..., Q_K]
@@ -50,6 +51,33 @@ class iSDQN:
         self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
         self.cumulated_losses = np.zeros(self.n_bellman_iterations)
+
+    def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
+        if step % self.data_to_update == 0:
+            batch_samples = replay_buffer.sample()
+
+            self.params, self.optimizer_state, losses = self.learn_on_batch(
+                self.params, self.optimizer_state, batch_samples
+            )
+            self.cumulated_losses += losses
+
+    def update_target_params(self, step: int):
+        if step % self.target_update_frequency == 0:
+            # Window shift
+            self.params = self.shift_params(self.params)
+
+            logs = {
+                "loss": np.mean(self.cumulated_losses) / (self.target_update_frequency / self.data_to_update),
+            }
+            for idx_network in range(min(self.n_bellman_iterations, 5)):
+                logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
+                    self.target_update_frequency / self.data_to_update
+                )
+            self.cumulated_losses = np.zeros_like(self.cumulated_losses)
+
+            return True, logs
+
+        return False, {}
 
     @partial(jax.jit, static_argnames="self")
     def learn_on_batch(self, params: FrozenDict, optimizer_state, batch_samples):
@@ -78,6 +106,22 @@ class iSDQN:
         )
 
     @partial(jax.jit, static_argnames="self")
+    def shift_params(self, params):
+        # Shift the last weight matrix with shape (last_feature, (1 + n_bellman_iterations) x n_actions)
+        # Reminder: 1 + self.n_bellman_iterations = [\bar{Q_0}, Q_1, ..., Q_K]
+        # Here we shifting: \bar{Q_i} <- Q_i+1
+        kernel = params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"]
+        params["params"][f"Dense_{self.last_idx_mlp}"]["kernel"] = kernel.at[:, : -self.n_actions].set(
+            kernel[:, self.n_actions :]
+        )
+
+        # Shift the last bias vector with shape ((1 + n_bellman_iterations) x n_actions)
+        bias = params["params"][f"Dense_{self.last_idx_mlp}"]["bias"]
+        params["params"][f"Dense_{self.last_idx_mlp}"]["bias"] = bias.at[: -self.n_actions].set(bias[self.n_actions :])
+
+        return params
+
+    @partial(jax.jit, static_argnames="self")
     def best_action(self, params: FrozenDict, state: jnp.ndarray, key: jax.Array):
         idx_network = jax.random.randint(key, (), 0, self.n_bellman_iterations)
         q_values = self.network.apply(params, state, use_running_average=True).reshape(
@@ -86,3 +130,6 @@ class iSDQN:
 
         # computes the best action for a single state from a uniformly chosen online network
         return jnp.argmax(q_values[1 + idx_network])
+
+    def get_model(self):
+        return {"params": self.params}
