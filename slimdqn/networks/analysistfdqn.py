@@ -40,7 +40,7 @@ class AnalysisTFDQN:
         self.update_horizon = update_horizon
         self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
-        self.cumulated_losses = 0
+        self.cumulated_loss = 0
         self.cumulated_target_churn_train = 0
         self.cumulated_target_churn_eval = 0
 
@@ -56,7 +56,7 @@ class AnalysisTFDQN:
                 target_churn_train,
                 target_churn_eval,
             ) = self.learn_on_batch(self.params, self.optimizer_state, batch_samples, batch_samples_eval)
-            self.cumulated_losses += loss
+            self.cumulated_loss += loss
             self.cumulated_target_churn_train += target_churn_train
             self.cumulated_target_churn_eval += target_churn_eval
 
