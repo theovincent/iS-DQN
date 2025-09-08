@@ -54,7 +54,7 @@ class AnalysisDQN:
         self.target_update_frequency = target_update_frequency
         self.cumulated_losses = np.zeros(self.n_bellman_iterations)
         self.cumulated_target_churns_train = np.zeros(self.n_bellman_iterations)
-        self.cumulated_target_evals_train = np.zeros(self.n_bellman_iterations)
+        self.cumulated_target_churns_eval = np.zeros(self.n_bellman_iterations)
         self.cumulated_cosine_sim_is_to_tb = 0
         self.cumulated_cosine_sim_tf_to_tb = 0
 
@@ -207,7 +207,7 @@ class AnalysisDQN:
 
         grad_tb = extract_feature_gradients(grad_tb)
         grad_tf = extract_feature_gradients(grad_tf)
-        grad_is = extract_feature_gradients(grad_is_)
+        grad_is = extract_feature_gradients(jax.tree.map(jnp.copy, grad_is_))
 
         return (
             grad_is_,
