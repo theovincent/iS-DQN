@@ -53,33 +53,30 @@ class AnalysisDQN:
         self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
         self.cumulated_losses = np.zeros(self.n_bellman_iterations)
-        self.cumulated_td_diff_is = 0
-        self.cumulated_td_diff_tf = 0
-        self.cumulated_param_distance_is_to_tb = 0
-        self.cumulated_param_distance_tf_to_tb = 0
+        self.cumulated_target_churns_train = np.zeros(self.n_bellman_iterations)
+        self.cumulated_target_evals_train = np.zeros(self.n_bellman_iterations)
         self.cumulated_cosine_sim_is_to_tb = 0
         self.cumulated_cosine_sim_tf_to_tb = 0
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
         if step % self.data_to_update == 0:
             batch_samples = replay_buffer.sample()
+            batch_samples_eval = replay_buffer.sample()
 
             (
                 self.params,
                 self.optimizer_state,
                 losses,
-                td_diff_is,
-                td_diff_tf,
-                param_distance_is_to_tb,
-                param_distance_tf_to_tb,
+                target_churns_train,
+                target_churns_eval,
                 cosine_sim_is_to_tb,
                 cosine_sim_tf_to_tb,
-            ) = self.learn_on_batch(self.params, self.target_params, self.optimizer_state, batch_samples)
+            ) = self.learn_on_batch(
+                self.params, self.target_params, self.optimizer_state, batch_samples, batch_samples_eval
+            )
             self.cumulated_losses += losses
-            self.cumulated_td_diff_is += td_diff_is
-            self.cumulated_td_diff_tf += td_diff_tf
-            self.cumulated_param_distance_is_to_tb += param_distance_is_to_tb
-            self.cumulated_param_distance_tf_to_tb += param_distance_tf_to_tb
+            self.cumulated_target_churns_train += target_churns_train
+            self.cumulated_target_churns_eval += target_churns_eval
             self.cumulated_cosine_sim_is_to_tb += cosine_sim_is_to_tb
             self.cumulated_cosine_sim_tf_to_tb += cosine_sim_tf_to_tb
 
@@ -92,21 +89,23 @@ class AnalysisDQN:
             normalizer = self.target_update_frequency / self.data_to_update
             logs = {
                 "loss": np.mean(self.cumulated_losses) / normalizer,
-                "analysis/td_diff_iS": self.cumulated_td_diff_is / normalizer,
-                "analysis/td_diff_TF": self.cumulated_td_diff_tf / normalizer,
-                "analysis/param_distance_iS_to_TB": self.cumulated_param_distance_is_to_tb / normalizer,
-                "analysis/param_distance_TF_to_TB": self.cumulated_param_distance_tf_to_tb / normalizer,
+                "analysis/target_churns_train": np.mean(self.cumulated_target_churns_train) / normalizer,
+                "analysis/target_churns_eval": np.mean(self.cumulated_target_churns_eval) / normalizer,
                 "analysis/cosine_sim_iS_to_TB": self.cumulated_cosine_sim_is_to_tb / normalizer,
                 "analysis/cosine_sim_TF_to_TB": self.cumulated_cosine_sim_tf_to_tb / normalizer,
             }
             for idx_network in range(min(self.n_bellman_iterations, 5)):
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / normalizer
+                logs[f"networks/{idx_network}_target_churns_train"] = (
+                    self.cumulated_target_churns_train[idx_network] / normalizer
+                )
+                logs[f"networks/{idx_network}_target_churns_eval"] = (
+                    self.cumulated_target_churns_eval[idx_network] / normalizer
+                )
 
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
-            self.cumulated_td_diff_is = 0
-            self.cumulated_td_diff_tf = 0
-            self.cumulated_param_distance_is_to_tb = 0
-            self.cumulated_param_distance_tf_to_tb = 0
+            self.cumulated_target_churns_train = np.zeros_like(self.cumulated_target_churns_train)
+            self.cumulated_target_churns_eval = np.zeros_like(self.cumulated_target_churns_eval)
             self.cumulated_cosine_sim_is_to_tb = 0
             self.cumulated_cosine_sim_tf_to_tb = 0
 
@@ -115,36 +114,46 @@ class AnalysisDQN:
         return False, {}
 
     @partial(jax.jit, static_argnames="self")
-    def learn_on_batch(self, params: FrozenDict, params_target, optimizer_state, batch_samples):
-        grad_loss, (
-            losses,
-            batch_stats,
-            td_diff_is,
-            td_diff_tf,
-            param_distance_is_to_tb,
-            param_distance_tf_to_tb,
-            cosine_sim_is_to_tb,
-            cosine_sim_tf_to_tb,
-        ) = jax.grad(self.loss_on_batch, has_aux=True)(params, params_target, batch_samples)
+    def learn_on_batch(self, params: FrozenDict, params_target, optimizer_state, batch_samples, batch_samples_eval):
+        grad_loss, losses, batch_stats, targets_train_pre_update, cosine_sim_is_to_tb, cosine_sim_tf_to_tb = (
+            self.grad_and_loss_on_batch(params, params_target, batch_samples)
+        )
+        all_q_values_eval_pre_udpate, batch_stats = self.network.apply_fn(
+            params, jnp.concatenate((batch_samples_eval.state, batch_samples_eval.next_state))
+        )
+        targets_eval_pre_update = jax.vmap(self.compute_target)(
+            batch_samples_eval, all_q_values_eval_pre_udpate[batch_samples_eval.shape[0] :, :-1]
+        )
 
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
         if self.network.batch_norm:
             params["batch_stats"] = batch_stats["batch_stats"]
 
+        all_q_values_train_post_udpate, batch_stats = self.network.apply_fn(
+            params, jnp.concatenate((batch_samples.state, batch_samples.next_state))
+        )
+        targets_train_post_update = jax.vmap(self.compute_target)(
+            batch_samples, all_q_values_train_post_udpate[batch_samples.shape[0] :, :-1]
+        )
+        all_q_values_eval_post_udpate, batch_stats = self.network.apply_fn(
+            params, jnp.concatenate((batch_samples_eval.state, batch_samples_eval.next_state))
+        )
+        targets_eval_post_update = jax.vmap(self.compute_target)(
+            batch_samples_eval, all_q_values_eval_post_udpate[batch_samples_eval.shape[0] :, :-1]
+        )
+
         return (
             params,
             optimizer_state,
             losses,
-            td_diff_is,
-            td_diff_tf,
-            param_distance_is_to_tb,
-            param_distance_tf_to_tb,
+            jnp.abs(targets_train_pre_update - targets_train_post_update).mean(axis=0),
+            jnp.abs(targets_eval_pre_update - targets_eval_post_update).mean(axis=0),
             cosine_sim_is_to_tb,
             cosine_sim_tf_to_tb,
         )
 
-    def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
+    def grad_and_loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
         batch_size = samples.state.shape[0]
 
         def compute_loss_tb(_params, _params_target, samples):
@@ -154,7 +163,7 @@ class AnalysisDQN:
                 samples, next_q_values[:, 1]
             )  # first head is used for online and target when full network copied
             td_tb = jax.vmap(lambda q, a: q[a])(q_values[:, 1], samples.action) - jax.lax.stop_gradient(targets)
-            return jnp.square(td_tb).mean(axis=0), td_tb
+            return jnp.square(td_tb).mean(axis=0)
 
         def compute_loss_tf(_params, samples):
             all_q_values, _ = self.network.apply_fn(_params, jnp.concatenate((samples.state, samples.next_state)))
@@ -162,7 +171,7 @@ class AnalysisDQN:
             targets = jax.vmap(self.compute_target)(samples, all_q_values[batch_size:, 1])
             # first head is used for online and target computation in TF
             td_tf = q_values - jax.lax.stop_gradient(targets)
-            return jnp.square(td_tf).mean(axis=0), td_tf
+            return jnp.square(td_tf).mean(axis=0)
 
         def compute_loss_is(_params, samples):
             all_q_values, batch_stats = self.network.apply_fn(
@@ -173,11 +182,11 @@ class AnalysisDQN:
             )
             targets = jax.vmap(self.compute_target)(samples, all_q_values[batch_size:, :-1])
             td_is = q_values - jax.lax.stop_gradient(targets)
-            return jnp.square(td_is).mean(axis=0).sum(), (batch_stats, jnp.square(td_is).mean(axis=0), td_is[:, 0])
+            return jnp.square(td_is).mean(axis=0).sum(), (batch_stats, jnp.square(td_is).mean(axis=0), targets)
 
-        grad_tb, td_tb = jax.grad(compute_loss_tb, has_aux=True)(params, params_target, samples)
-        grad_tf, td_tf = jax.grad(compute_loss_tf, has_aux=True)(params, samples)
-        grad_is, (batch_stats, td_losses_is, td_is_k1) = jax.grad(compute_loss_is, has_aux=True)(params, samples)
+        grad_tb = jax.grad(compute_loss_tb)(params, params_target, samples)
+        grad_tf = jax.grad(compute_loss_tf)(params, samples)
+        grad_is, (batch_stats, td_losses_is, targets) = jax.grad(compute_loss_is, has_aux=True)(params, samples)
 
         def extract_feature_gradients(gradients):
             gradients["params"][f"Dense_{self.last_idx_mlp}"]["kernel"] = gradients["params"][
@@ -200,13 +209,11 @@ class AnalysisDQN:
         grad_tf = extract_feature_gradients(grad_tf)
         grad_is = extract_feature_gradients(grad_is)
 
-        return td_losses_is.sum(), (
-            td_losses_is,
+        return (
+            grad_is,
+            td_losses_is.sum(),
             batch_stats,
-            jnp.mean(jnp.abs(td_is_k1 - td_tb)),
-            jnp.mean(jnp.abs(td_tf - td_tb)),
-            jnp.linalg.norm(grad_is - grad_tb),
-            jnp.linalg.norm(grad_tf - grad_tb),
+            targets,
             jnp.dot(grad_is, grad_tb) / (jnp.linalg.norm(grad_is) * jnp.linalg.norm(grad_tb) + 1e-9),
             jnp.dot(grad_tf, grad_tb) / (jnp.linalg.norm(grad_tf) * jnp.linalg.norm(grad_tb) + 1e-9),
         )
