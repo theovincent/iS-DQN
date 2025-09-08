@@ -186,7 +186,7 @@ class AnalysisDQN:
 
         grad_tb = jax.grad(compute_loss_tb)(params, params_target, samples)
         grad_tf = jax.grad(compute_loss_tf)(params, samples)
-        grad_is, (batch_stats, td_losses_is, targets) = jax.grad(compute_loss_is, has_aux=True)(params, samples)
+        grad_is_, (batch_stats, td_losses_is, targets) = jax.grad(compute_loss_is, has_aux=True)(params, samples)
 
         def extract_feature_gradients(gradients):
             gradients["params"][f"Dense_{self.last_idx_mlp}"]["kernel"] = gradients["params"][
@@ -207,10 +207,10 @@ class AnalysisDQN:
 
         grad_tb = extract_feature_gradients(grad_tb)
         grad_tf = extract_feature_gradients(grad_tf)
-        grad_is = extract_feature_gradients(grad_is)
+        grad_is = extract_feature_gradients(grad_is_)
 
         return (
-            grad_is,
+            grad_is_,
             td_losses_is.sum(),
             batch_stats,
             targets,
