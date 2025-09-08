@@ -83,7 +83,7 @@ class AnalysisTFDQN:
             self.loss_on_batch, has_aux=True
         )(params, batch_samples)
         all_q_values_eval_pre_udpate, batch_stats = self.network.apply(
-            params, jnp.concatenate((batch_samples_eval.state, batch_samples_eval.next_state))
+            params, jnp.concatenate((batch_samples_eval.state, batch_samples_eval.next_state)), mutable=["batch_stats"]
         )
         targets_eval_pre_update = self.compute_target(
             batch_samples_eval, all_q_values_eval_pre_udpate[batch_samples_eval.state.shape[0] :]
@@ -95,13 +95,13 @@ class AnalysisTFDQN:
             params["batch_stats"] = batch_stats["batch_stats"]
 
         all_q_values_train_post_udpate, batch_stats = self.network.apply(
-            params, jnp.concatenate((batch_samples.state, batch_samples.next_state))
+            params, jnp.concatenate((batch_samples.state, batch_samples.next_state)), mutable=["batch_stats"]
         )
         targets_train_post_update = self.compute_target(
             batch_samples, all_q_values_train_post_udpate[batch_samples.state.shape[0] :]
         )
         all_q_values_eval_post_udpate, batch_stats = self.network.apply(
-            params, jnp.concatenate((batch_samples_eval.state, batch_samples_eval.next_state))
+            params, jnp.concatenate((batch_samples_eval.state, batch_samples_eval.next_state)), mutable=["batch_stats"]
         )
         targets_eval_post_update = self.compute_target(
             batch_samples_eval, all_q_values_eval_post_udpate[batch_samples_eval.state.shape[0] :]
