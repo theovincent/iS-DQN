@@ -2,7 +2,7 @@ SHARED_ARGS="--features 32 64 64 512 --replay_buffer_capacity 1_000_000 --batch_
     --horizon 27_000 --n_epochs 20 --n_training_steps_per_epoch 250_000 --data_to_update 4 --n_initial_samples 20_000 \
     --epsilon_end 0.01 --epsilon_duration 250_000 --learning_rate 6.25e-5"
 
-GAME="Asterix"
+GAME="CrazyClimber"
 N_BELLMAN_ITERATIONS=1  # 1 3 5 10
 LAYER_NORM=1  # 0 1
 BATCH_NORM=0  # 0 1
@@ -30,7 +30,7 @@ then
 fi
 
 SHARED_ARGS="$SHARED_ARGS --target_update_frequency $TARGET_UPDATE_FREQ --architecture_type $ARCHITECTURE_TYPE"
-SHARED_NAME="LN${LAYER_NORM}_BN${BATCH_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}_A${ANALYSIS}"
+SHARED_NAME="LN${LAYER_NORM}_BN${BATCH_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}_A${ANALYSIS}_Churn"
 # ----- L2 Loss -----
 
 DQN_ARGS="--experiment_name L2_${SHARED_NAME}_${GAME}"
@@ -42,5 +42,5 @@ DQN_ARGS="--experiment_name L2_${SHARED_NAME}_${GAME}"
 ISDQN_ARGS="--experiment_name L2_K${N_BELLMAN_ITERATIONS}_${SHARED_NAME}_${GAME} --n_bellman_iterations $N_BELLMAN_ITERATIONS"
 # launch_job/atari/${PLATFORM}_isdqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $ISDQN_ARGS
 # launch_job/atari/${PLATFORM}_isdqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $ISDQN_ARGS
-launch_job/atari/${PLATFORM}_analysisisdqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $ISDQN_ARGS
-launch_job/atari/${PLATFORM}_analysisisdqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $ISDQN_ARGS
+launch_job/atari/${PLATFORM}_analysisdqn.sh --first_seed 1 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $ISDQN_ARGS
+launch_job/atari/${PLATFORM}_analysisdqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $ISDQN_ARGS

@@ -89,8 +89,8 @@ class AnalysisDQN:
             normalizer = self.target_update_frequency / self.data_to_update
             logs = {
                 "loss": np.mean(self.cumulated_losses) / normalizer,
-                "analysis/target_churns_train": np.mean(self.cumulated_target_churns_train) / normalizer,
-                "analysis/target_churns_eval": np.mean(self.cumulated_target_churns_eval) / normalizer,
+                "analysis/target_churns_train": self.cumulated_target_churns_train[0] / normalizer,
+                "analysis/target_churns_eval": self.cumulated_target_churns_eval[0] / normalizer,
                 "analysis/cosine_sim_iS_to_TB": self.cumulated_cosine_sim_is_to_tb / normalizer,
                 "analysis/cosine_sim_TF_to_TB": self.cumulated_cosine_sim_tf_to_tb / normalizer,
             }
@@ -122,7 +122,7 @@ class AnalysisDQN:
             params, jnp.concatenate((batch_samples_eval.state, batch_samples_eval.next_state))
         )
         targets_eval_pre_update = jax.vmap(self.compute_target)(
-            batch_samples_eval, all_q_values_eval_pre_udpate[batch_samples_eval.shape[0] :, :-1]
+            batch_samples_eval, all_q_values_eval_pre_udpate[batch_samples_eval.state.shape[0] :, :-1]
         )
 
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
@@ -134,13 +134,13 @@ class AnalysisDQN:
             params, jnp.concatenate((batch_samples.state, batch_samples.next_state))
         )
         targets_train_post_update = jax.vmap(self.compute_target)(
-            batch_samples, all_q_values_train_post_udpate[batch_samples.shape[0] :, :-1]
+            batch_samples, all_q_values_train_post_udpate[batch_samples.state.shape[0] :, :-1]
         )
         all_q_values_eval_post_udpate, batch_stats = self.network.apply_fn(
             params, jnp.concatenate((batch_samples_eval.state, batch_samples_eval.next_state))
         )
         targets_eval_post_update = jax.vmap(self.compute_target)(
-            batch_samples_eval, all_q_values_eval_post_udpate[batch_samples_eval.shape[0] :, :-1]
+            batch_samples_eval, all_q_values_eval_post_udpate[batch_samples_eval.state.shape[0] :, :-1]
         )
 
         return (
