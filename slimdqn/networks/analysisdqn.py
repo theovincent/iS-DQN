@@ -89,8 +89,8 @@ class AnalysisDQN:
             normalizer = self.target_update_frequency / self.data_to_update
             logs = {
                 "loss": np.mean(self.cumulated_losses) / normalizer,
-                "analysis/target_churn_train": self.cumulated_target_churns_train[0] / normalizer,
-                "analysis/target_churn_eval": self.cumulated_target_churns_eval[0] / normalizer,
+                "analysis/target_churns_train": self.cumulated_target_churns_train[0] / normalizer,
+                "analysis/target_churns_eval": self.cumulated_target_churns_eval[0] / normalizer,
                 "analysis/cosine_sim_iS_to_TB": self.cumulated_cosine_sim_is_to_tb / normalizer,
                 "analysis/cosine_sim_TF_to_TB": self.cumulated_cosine_sim_tf_to_tb / normalizer,
             }
