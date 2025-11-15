@@ -261,3 +261,64 @@ def add_analysistfdqn_arguments(parser: argparse.ArgumentParser):
     add_layer_norm(parser)
     add_batch_norm(parser)
     add_target_update_frequency(parser)
+
+
+@output_added_arguments
+def add_sm2dqn_arguments(parser: argparse.ArgumentParser):
+    add_layer_norm(parser)
+    add_target_update_frequency(parser)
+    parser.add_argument(
+        "-omega",
+        "--omega",
+        help="Omega for mellow max.",
+        type=float,
+        default=10,
+    )
+    parser.add_argument(
+        "-alpha",
+        "--alpha",
+        help="Alpha for soft-mellow max.",
+        type=float,
+        default=1,
+    )
+
+
+@output_added_arguments
+def add_sm2tfdqn_arguments(parser: argparse.ArgumentParser):
+    add_layer_norm(parser)
+    add_target_update_frequency(parser)
+    parser.add_argument(
+        "-omega",
+        "--omega",
+        help="Omega for mellow max.",
+        type=float,
+        default=10,
+    )
+    parser.add_argument(
+        "-alpha",
+        "--alpha",
+        help="Alpha for soft-mellow max.",
+        type=float,
+        default=1,
+    )
+
+
+@output_added_arguments
+def add_sm2isdqn_arguments(parser: argparse.ArgumentParser):
+    add_n_bellman_iterations(parser)
+    add_layer_norm(parser)
+    add_target_update_frequency(parser)
+    parser.add_argument(
+        "-omega",
+        "--omega",
+        help="Omega for mellow max.",
+        type=float,
+        default=10,
+    )
+    parser.add_argument(
+        "-alpha",
+        "--alpha",
+        help="Alpha for soft-mellow max.",
+        type=float,
+        default=1,
+    )
