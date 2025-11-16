@@ -9,7 +9,7 @@ from slimdqn.networks.architectures.dqn import DQNNet
 from slimdqn.sample_collection.replay_buffer import ReplayBuffer, ReplayElement
 
 
-class SM2DQN:
+class MMDQN:
     def __init__(
         self,
         key: jax.random.PRNGKey,
@@ -24,7 +24,6 @@ class SM2DQN:
         data_to_update: int,
         target_update_frequency: int,
         omega: float,
-        alpha: float,
         adam_eps: float = 1e-8,
     ):
         self.network = DQNNet(features, architecture_type, n_actions, layer_norm)
@@ -39,7 +38,6 @@ class SM2DQN:
         self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
         self.omega = omega
-        self.alpha = alpha
         self.cumulated_loss = 0
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
@@ -87,14 +85,9 @@ class SM2DQN:
 
     def compute_target(self, params: FrozenDict, sample: ReplayElement):
         # computes the target value for single sample
-        next_state_q = self.network.apply(params, sample.next_state)
-        sm2_q = (
-            jnp.log(
-                jnp.sum(jax.nn.softmax(self.alpha * next_state_q) * jnp.exp(self.omega * next_state_q), axis=-1) + 1e-6
-            )
-            / self.omega
-        )
-        return sample.reward + (1 - sample.is_terminal) * (self.gamma**self.update_horizon) * sm2_q
+        next_q_values = self.network.apply(params, sample.next_state)
+        mm_q = jnp.log(jnp.mean(jnp.exp(self.omega * next_q_values), axis=-1) + 1e-9) / self.omega
+        return sample.reward + (1 - sample.is_terminal) * (self.gamma**self.update_horizon) * mm_q
 
     @partial(jax.jit, static_argnames="self")
     def best_action(self, params: FrozenDict, state: jnp.ndarray, **kwargs):

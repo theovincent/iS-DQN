@@ -28,12 +28,12 @@ SHARED_ARGS="$SHARED_ARGS --target_update_frequency $TARGET_UPDATE_FREQ --archit
 SHARED_NAME="LN${LAYER_NORM}_BN${BATCH_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}"
 # ----- L2 Loss -----
 
-SM2DQN_ARGS="--experiment_name L2_${SHARED_NAME}_${GAME}"
-launch_job/atari/${PLATFORM}_sm2dqn.sh --first_seed 1 --last_seed 1 --n_parallel_seeds 2 $SHARED_ARGS $DQN_ARGS
+MMDQN_ARGS="--experiment_name L2_${SHARED_NAME}_${GAME}"
+launch_job/atari/${PLATFORM}_mmdqn.sh --first_seed 1 --last_seed 1 --n_parallel_seeds 2 $SHARED_ARGS $DQN_ARGS
 # launch_job/atari/${PLATFORM}_dqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $DQN_ARGS
-launch_job/atari/${PLATFORM}_sm2tfdqn.sh --first_seed 1 --last_seed 1 --n_parallel_seeds 2 $SHARED_ARGS $DQN_ARGS
+launch_job/atari/${PLATFORM}_mmtfdqn.sh --first_seed 1 --last_seed 1 --n_parallel_seeds 2 $SHARED_ARGS $DQN_ARGS
 # launch_job/atari/${PLATFORM}_tfdqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $DQN_ARGS
 
-SM2ISDQN_ARGS="--experiment_name L2_K${N_BELLMAN_ITERATIONS}_${SHARED_NAME}_${GAME} --n_bellman_iterations $N_BELLMAN_ITERATIONS"
-launch_job/atari/${PLATFORM}_sm2isdqn.sh --first_seed 1 --last_seed 1 --n_parallel_seeds 2 $SHARED_ARGS $ISDQN_ARGS
+MMISDQN_ARGS="--experiment_name L2_K${N_BELLMAN_ITERATIONS}_${SHARED_NAME}_${GAME} --n_bellman_iterations $N_BELLMAN_ITERATIONS"
+launch_job/atari/${PLATFORM}_mmisdqn.sh --first_seed 1 --last_seed 1 --n_parallel_seeds 2 $SHARED_ARGS $ISDQN_ARGS
 # launch_job/atari/${PLATFORM}_isdqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $ISDQN_ARGS

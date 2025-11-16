@@ -10,7 +10,7 @@ from slimdqn.networks.architectures.dqn import DQNNet
 from slimdqn.sample_collection.replay_buffer import ReplayBuffer, ReplayElement
 
 
-class SM2iSDQN:
+class MMiSDQN:
     def __init__(
         self,
         key: jax.random.PRNGKey,
@@ -26,7 +26,6 @@ class SM2iSDQN:
         data_to_update: int,
         target_update_frequency: int,
         omega: float,
-        alpha: float,
         adam_eps: float = 1e-8,
     ):
         self.n_bellman_iterations = n_bellman_iterations
@@ -50,7 +49,6 @@ class SM2iSDQN:
         self.data_to_update = data_to_update
         self.target_update_frequency = target_update_frequency
         self.omega = omega
-        self.alpha = alpha
         self.cumulated_losses = np.zeros(self.n_bellman_iterations)
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
@@ -105,14 +103,8 @@ class SM2iSDQN:
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
         # shape of next_q_values (n_bellman_iterations, next_states, n_actions)
-        sm2_q = (
-            jnp.log(
-                jnp.sum(jax.nn.softmax(self.alpha * next_q_values) * jnp.exp(self.omega * next_q_values), axis=-1)
-                + 1e-6
-            )
-            / self.omega
-        )
-        return sample.reward + (1 - sample.is_terminal) * (self.gamma**self.update_horizon) * sm2_q
+        mm_q = jnp.log(jnp.mean(jnp.exp(self.omega * next_q_values), axis=-1) + 1e-9) / self.omega
+        return sample.reward + (1 - sample.is_terminal) * (self.gamma**self.update_horizon) * mm_q
 
     @partial(jax.jit, static_argnames="self")
     def shift_params(self, params):
