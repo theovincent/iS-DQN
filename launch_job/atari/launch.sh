@@ -2,15 +2,15 @@ SHARED_ARGS="--features 32 64 64 512 --replay_buffer_capacity 1_000_000 --batch_
     --horizon 27_000 --n_epochs 40 --n_training_steps_per_epoch 250_000 --data_to_update 4 --n_initial_samples 20_000 \
     --epsilon_end 0.01 --epsilon_duration 250_000 --learning_rate 6.25e-5"
 
-GAME="Breakout"
+GAME="Seaquest"
 N_BELLMAN_ITERATIONS=1  # 1 3 5 10
-LAYER_NORM=0  # 0 1
+LAYER_NORM=1  # 0 1
 BATCH_NORM=0  # 0 1
 ARCHITECTURE_TYPE="cnn"  # cnn impala
 TARGET_UPDATE_FREQ=8000
-OMEGA=1000
+OMEGA=30
 
-PLATFORM="normal/local"  # nhrfau/cluster normal/cluster normal/local
+PLATFORM="normal/cluster"  # nhrfau/cluster normal/cluster normal/local
 
 if [ $PLATFORM == "normal/local" ]
 then
@@ -30,11 +30,11 @@ SHARED_NAME="LN${LAYER_NORM}_BN${BATCH_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDA
 # ----- L2 Loss -----
 
 MMDQN_ARGS="--experiment_name L2_MM_O${OMEGA}_${SHARED_NAME}_${GAME} --omega $OMEGA"
-launch_job/atari/${PLATFORM}_mmdqn.sh --first_seed 1 --last_seed 1 --n_parallel_seeds 2 $SHARED_ARGS $MMDQN_ARGS
+# launch_job/atari/${PLATFORM}_mmdqn.sh --first_seed 2 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $MMDQN_ARGS
 # launch_job/atari/${PLATFORM}_dqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $MMDQN_ARGS
-launch_job/atari/${PLATFORM}_mmtfdqn.sh --first_seed 1 --last_seed 1 --n_parallel_seeds 2 $SHARED_ARGS $MMDQN_ARGS
+# launch_job/atari/${PLATFORM}_mmtfdqn.sh --first_seed 2 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $MMDQN_ARGS
 # launch_job/atari/${PLATFORM}_tfdqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $MMDQN_ARGS
 
 MMISDQN_ARGS="--experiment_name L2_MM_K${N_BELLMAN_ITERATIONS}_O${OMEGA}_${SHARED_NAME}_${GAME} --n_bellman_iterations $N_BELLMAN_ITERATIONS --omega $OMEGA"
-launch_job/atari/${PLATFORM}_mmisdqn.sh --first_seed 1 --last_seed 1 --n_parallel_seeds 2 $SHARED_ARGS $MMISDQN_ARGS
-# launch_job/atari/${PLATFORM}_isdqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $MMISDQN_ARGS
+# launch_job/atari/${PLATFORM}_mmisdqn.sh --first_seed 2 --last_seed 2 --n_parallel_seeds 2 $SHARED_ARGS $MMISDQN_ARGS
+launch_job/atari/${PLATFORM}_mmisdqn.sh --first_seed 5 --last_seed 5 --n_parallel_seeds 1 $SHARED_ARGS $MMISDQN_ARGS
