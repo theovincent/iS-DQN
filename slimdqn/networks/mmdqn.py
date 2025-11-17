@@ -86,7 +86,10 @@ class MMDQN:
     def compute_target(self, params: FrozenDict, sample: ReplayElement):
         # computes the target value for single sample
         next_q_values = self.network.apply(params, sample.next_state)
-        mm_q = jnp.log(jnp.mean(jnp.exp(self.omega * next_q_values), axis=-1) + 1e-9) / self.omega
+        mm_q = (
+            jax.scipy.special.logsumexp(a=self.omega * next_q_values, axis=-1, b=1 / next_q_values.shape[-1])
+            / self.omega
+        )
         return sample.reward + (1 - sample.is_terminal) * (self.gamma**self.update_horizon) * mm_q
 
     @partial(jax.jit, static_argnames="self")

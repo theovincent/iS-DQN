@@ -82,7 +82,10 @@ class MMTFDQN:
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
         # shape of next_q_values (next_states, n_actions)
-        mm_q = jnp.log(jnp.mean(jnp.exp(self.omega * next_q_values), axis=-1) + 1e-9) / self.omega
+        mm_q = (
+            jax.scipy.special.logsumexp(a=self.omega * next_q_values, axis=-1, b=1 / next_q_values.shape[-1])
+            / self.omega
+        )
         return sample.reward + (1 - sample.is_terminal) * (self.gamma**self.update_horizon) * mm_q
 
     @partial(jax.jit, static_argnames="self")
