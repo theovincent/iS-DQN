@@ -72,7 +72,7 @@ class MetaiSDQN:
             logs = {
                 "loss": np.mean(self.cumulated_losses) / (self.target_update_frequency / self.data_to_update),
             }
-            for idx_network in range(min(self.n_bellman_iterations, 5)):
+            for idx_network in range(self.n_bellman_iterations):
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
                     self.target_update_frequency / self.data_to_update
                 )
