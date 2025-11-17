@@ -249,6 +249,13 @@ def add_isdqn_arguments(parser: argparse.ArgumentParser):
 
 
 @output_added_arguments
+def add_metaisdqn_arguments(parser: argparse.ArgumentParser):
+    add_n_bellman_iterations(parser)
+    add_layer_norm(parser)
+    add_target_update_frequency(parser)
+
+
+@output_added_arguments
 def add_analysisdqn_arguments(parser: argparse.ArgumentParser):
     add_n_bellman_iterations(parser)
     add_layer_norm(parser)
