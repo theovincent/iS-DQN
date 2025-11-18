@@ -42,7 +42,8 @@ class MetaiSDQN:
 
         self.meta_optimizer = optax.adam(learning_rate)
         self.meta_optimizer_state = self.meta_optimizer.init(self.meta_params)
-        self.optimizer = optax.adam(learning_rate, eps=adam_eps)
+        # eps_root=1e-9 so that the gradient over adam does not output nans
+        self.optimizer = optax.adam(learning_rate, eps=adam_eps, eps_root=1e-9)
         self.optimizer_state = self.optimizer.init(self.params)
 
         self.gamma = gamma
