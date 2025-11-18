@@ -77,7 +77,7 @@ class MetaiSDQN:
                 logs[f"networks/{idx_network}_loss"] = self.cumulated_losses[idx_network] / (
                     self.target_update_frequency / self.data_to_update
                 )
-                logs[f"networks/{idx_network}_loss"] = self.cumulated_alphas[idx_network] / (
+                logs[f"networks/{idx_network}_alphas"] = self.cumulated_alphas[idx_network] / (
                     self.target_update_frequency / self.data_to_update
                 )
             self.cumulated_losses = np.zeros_like(self.cumulated_losses)
