@@ -3,7 +3,7 @@ SHARED_ARGS="--features 32 64 64 512 --replay_buffer_capacity 1_000_000 --batch_
     --epsilon_end 0.01 --epsilon_duration 250_000 --learning_rate 6.25e-5"
 
 GAME="Breakout"
-N_BELLMAN_ITERATIONS=1  # 1 3 5 10
+N_BELLMAN_ITERATIONS=9  # 1 3 5 10
 LAYER_NORM=1  # 0 1
 ARCHITECTURE_TYPE="cnn"  # cnn impala
 TARGET_UPDATE_FREQ=8000
@@ -20,7 +20,7 @@ then
 fi
 
 SHARED_ARGS="$SHARED_ARGS --target_update_frequency $TARGET_UPDATE_FREQ --architecture_type $ARCHITECTURE_TYPE"
-SHARED_NAME="LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}"
+SHARED_NAME="LN${LAYER_NORM}_${ARCHITECTURE_TYPE}_T${TARGET_UPDATE_FREQ}_SOFT"
 # ----- L2 Loss -----
 
 DQN_ARGS="--experiment_name L2_${SHARED_NAME}_${GAME}"

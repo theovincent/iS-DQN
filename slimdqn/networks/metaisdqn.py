@@ -121,7 +121,8 @@ class MetaiSDQN:
 
         # shape (batch_size, n_bellman_iterations)
         td_losses = jnp.square(q_values - stop_grad_targets)
-        return meta_params["alphas"] @ td_losses.mean(axis=0), td_losses.mean(axis=0)
+        alphas = jax.nn.softmax(meta_params["alphas"]) * self.n_bellman_iterations
+        return alphas @ td_losses.mean(axis=0), td_losses.mean(axis=0)
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
         # shape of next_q_values (n_bellman_iterations, next_states, n_actions)
