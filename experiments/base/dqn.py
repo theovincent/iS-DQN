@@ -51,7 +51,6 @@ def train(
 
                 if target_updated:
                     logs = {"n_training_steps": n_training_steps, **logs}
-                    print(logs)
                     if p["analysis"]:
                         analysis_logs_at_target_update = eval_srank_and_dead_neurons(agent.params, rb, p)
                         logs.update(analysis_logs_at_target_update)
