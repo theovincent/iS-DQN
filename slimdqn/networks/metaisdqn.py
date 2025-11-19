@@ -36,7 +36,7 @@ class MetaiSDQN:
         def apply(params, state):
             return self.network.apply(params, state).reshape((-1, 1 + self.n_bellman_iterations, n_actions))
 
-        self.meta_params = {"alpha": jnp.ones(self.n_bellman_iterations, dtype=jnp.float32)}
+        self.meta_params = {"alphas": jnp.ones(self.n_bellman_iterations, dtype=jnp.float32)}
         self.network.apply_fn = apply
         self.params = self.network.init(key, jnp.zeros(observation_dim, dtype=jnp.float32))
 
@@ -105,7 +105,7 @@ class MetaiSDQN:
         params = optax.apply_updates(params, updates)
 
         meta_loss, td_losses = self.loss_on_batch(
-            params, {"alpha": jnp.ones(self.n_bellman_iterations, dtype=jnp.float32)}, samples
+            params, {"alphas": jnp.ones(self.n_bellman_iterations, dtype=jnp.float32)}, samples
         )
 
         return meta_loss, (params, optimizer_state, td_losses)
