@@ -42,6 +42,8 @@ class DQNNet(nn.Module):
     final_feature: int
     layer_norm: bool = False
     batch_norm: bool = False
+    compute_dtype: jnp.dtype = jnp.bfloat16
+    param_dtype: jnp.dtype = jnp.float32
 
     @nn.compact
     def __call__(self, x, use_running_average=False):
@@ -49,26 +51,48 @@ class DQNNet(nn.Module):
             initializer = nn.initializers.xavier_uniform()
             idx_feature_start = 3
             x = jnp.array(x, ndmin=4) / 255.0
+            x = x.astype(self.compute_dtype)
             if self.batch_norm:
                 x = nn.BatchNorm(use_running_average, axis=(1, 2))(x)
 
-            x = nn.Conv(features=self.features[0], kernel_size=(8, 8), strides=(4, 4), kernel_init=initializer)(x)
+            x = nn.Conv(
+                features=self.features[0],
+                kernel_size=(8, 8),
+                strides=(4, 4),
+                kernel_init=initializer,
+                dtype=self.compute_dtype,
+                param_dtype=self.param_dtype,
+            )(x)
             if self.layer_norm:
-                x = nn.LayerNorm()(x)
+                x = nn.LayerNorm(dtype=jnp.float32, param_dtype=self.param_dtype)(x)
             x = nn.relu(x)
             if self.batch_norm:
                 x = nn.BatchNorm(use_running_average, axis=(1, 2))(x)
 
-            x = nn.Conv(features=self.features[1], kernel_size=(4, 4), strides=(2, 2), kernel_init=initializer)(x)
+            x = nn.Conv(
+                features=self.features[1],
+                kernel_size=(4, 4),
+                strides=(2, 2),
+                kernel_init=initializer,
+                dtype=self.compute_dtype,
+                param_dtype=self.param_dtype,
+            )(x)
             if self.layer_norm:
-                x = nn.LayerNorm()(x)
+                x = nn.LayerNorm(dtype=jnp.float32, param_dtype=self.param_dtype)(x)
             x = nn.relu(x)
             if self.batch_norm:
                 x = nn.BatchNorm(use_running_average, axis=(1, 2))(x)
 
-            x = nn.Conv(features=self.features[2], kernel_size=(3, 3), strides=(1, 1), kernel_init=initializer)(x)
+            x = nn.Conv(
+                features=self.features[2],
+                kernel_size=(3, 3),
+                strides=(1, 1),
+                kernel_init=initializer,
+                dtype=self.compute_dtype,
+                param_dtype=self.param_dtype,
+            )(x)
             if self.layer_norm:
-                x = nn.LayerNorm()(x)
+                x = nn.LayerNorm(dtype=jnp.float32, param_dtype=self.param_dtype)(x)
             x = nn.relu(x).reshape((x.shape[0], -1))
             if self.batch_norm:
                 x = nn.BatchNorm(use_running_average)(x)
@@ -93,11 +117,18 @@ class DQNNet(nn.Module):
         x = jnp.squeeze(x)
 
         for idx_layer in range(idx_feature_start, len(self.features)):
-            x = nn.Dense(self.features[idx_layer], kernel_init=initializer)(x)
+            x = nn.Dense(
+                self.features[idx_layer],
+                kernel_init=initializer,
+                dtype=self.compute_dtype,
+                param_dtype=self.param_dtype,
+            )(x)
             if self.layer_norm:
-                x = nn.LayerNorm()(x)
+                x = nn.LayerNorm(dtype=jnp.float32, param_dtype=self.param_dtype)(x)
             x = nn.relu(x)
             if self.batch_norm:
                 x = nn.BatchNorm(use_running_average)(x)
 
-        return nn.Dense(self.final_feature, kernel_init=initializer)(x)
+        return nn.Dense(
+            self.final_feature, kernel_init=initializer, dtype=self.compute_dtype, param_dtype=self.param_dtype
+        )(x)

@@ -28,7 +28,6 @@ class TFDQN:
     ):
         self.network = DQNNet(features, architecture_type, n_actions, layer_norm, batch_norm)
         self.params = self.network.init(key, jnp.zeros(observation_dim, dtype=jnp.float32))
-        self.params = jax.tree.map(lambda x: x.astype(jnp.bfloat16), self.params)
 
         self.optimizer = optax.adam(learning_rate, eps=adam_eps)
         self.optimizer_state = self.optimizer.init(self.params)
