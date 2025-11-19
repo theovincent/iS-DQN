@@ -10,8 +10,6 @@ class Stack(nn.Module):
     stack_size: int
     layer_norm: bool
     batch_norm: bool
-    param_dtype: jnp.dtype = jnp.float32
-    dtype: jnp.dtype = jnp.bfloat16
 
     @nn.compact
     def __call__(self, x, use_running_average=False):
@@ -44,8 +42,6 @@ class DQNNet(nn.Module):
     final_feature: int
     layer_norm: bool = False
     batch_norm: bool = False
-    param_dtype: jnp.dtype = jnp.float32
-    dtype: jnp.dtype = jnp.bfloat16
 
     @nn.compact
     def __call__(self, x, use_running_average=False):
