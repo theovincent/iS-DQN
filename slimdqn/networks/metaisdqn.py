@@ -36,7 +36,7 @@ class MetaiSDQN:
         def apply(params, state):
             return self.network.apply(params, state).reshape((-1, 1 + self.n_bellman_iterations, n_actions))
 
-        self.meta_params = {"alpha_logits": jnp.ones(self.n_bellman_iterations, dtype=jnp.float32)}
+        self.meta_params = {"alpha": jnp.ones(self.n_bellman_iterations, dtype=jnp.float32)}
         self.network.apply_fn = apply
         self.params = self.network.init(key, jnp.zeros(observation_dim, dtype=jnp.float32))
 
@@ -63,7 +63,7 @@ class MetaiSDQN:
                 )
             )
             self.cumulated_losses += losses
-            self.cumulated_alphas += jax.nn.softmax(self.meta_params["alpha_logits"]) * self.n_bellman_iterations
+            self.cumulated_alphas += self.meta_params["alphas"]
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
@@ -105,7 +105,7 @@ class MetaiSDQN:
         params = optax.apply_updates(params, updates)
 
         meta_loss, td_losses = self.loss_on_batch(
-            params, {"alpha_logits": jnp.ones(self.n_bellman_iterations, dtype=jnp.float32)}, samples
+            params, {"alpha": jnp.ones(self.n_bellman_iterations, dtype=jnp.float32)}, samples
         )
 
         return meta_loss, (params, optimizer_state, td_losses)
@@ -121,8 +121,7 @@ class MetaiSDQN:
 
         # shape (batch_size, n_bellman_iterations)
         td_losses = jnp.square(q_values - stop_grad_targets)
-        alphas = jax.nn.softmax(meta_params["alpha_logits"]) * self.n_bellman_iterations
-        return alphas @ td_losses.mean(axis=0), td_losses.mean(axis=0)
+        return meta_params["alphas"] @ td_losses.mean(axis=0), td_losses.mean(axis=0)
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
         # shape of next_q_values (n_bellman_iterations, next_states, n_actions)
