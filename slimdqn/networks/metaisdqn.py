@@ -106,7 +106,7 @@ class MetaiSDQN:
 
         meta_loss, td_losses = self.loss_on_batch(
             params,
-            {"alpha_logits": jnp.array([10.0] + [-10.0] * (self.n_bellman_iterations - 1), dtype=jnp.float32)},
+            {"alpha_logits": jnp.ones(self.n_bellman_iterations, dtype=jnp.float32)},
             samples,
         )
 
