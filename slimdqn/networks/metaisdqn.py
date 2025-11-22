@@ -36,7 +36,7 @@ class MetaiSDQN:
         def apply(params, state):
             return self.network.apply(params, state).reshape((-1, 1 + self.n_bellman_iterations, n_actions))
 
-        self.meta_params = {"alphas": jnp.array([1.0] + [0.0] * (self.n_bellman_iterations - 1), dtype=jnp.float32)}
+        self.meta_params = {"alpha_logits": jnp.zeros(self.n_bellman_iterations, dtype=jnp.float32)}
         self.network.apply_fn = apply
         self.params = self.network.init(key, jnp.zeros(observation_dim, dtype=jnp.float32))
 
@@ -63,7 +63,7 @@ class MetaiSDQN:
                 )
             )
             self.cumulated_losses += losses
-            self.cumulated_alphas += self.meta_params["alphas"]
+            self.cumulated_alphas += jax.nn.softmax(self.meta_params["alpha_logits"]) * self.n_bellman_iterations
 
     def update_target_params(self, step: int):
         if step % self.target_update_frequency == 0:
@@ -105,7 +105,9 @@ class MetaiSDQN:
         params = optax.apply_updates(params, updates)
 
         meta_loss, td_losses = self.loss_on_batch(
-            params, {"alphas": jnp.array([1.0] + [0.0] * (self.n_bellman_iterations - 1), dtype=jnp.float32)}, samples
+            params,
+            {"alpha_logits": jnp.array([10.0] + [-10.0] * (self.n_bellman_iterations - 1), dtype=jnp.float32)},
+            samples,
         )
 
         return meta_loss, (params, optimizer_state, td_losses)
@@ -121,7 +123,8 @@ class MetaiSDQN:
 
         # shape (batch_size, n_bellman_iterations)
         td_losses = jnp.square(q_values - stop_grad_targets)
-        return meta_params["alphas"] @ td_losses.mean(axis=0), td_losses.mean(axis=0)
+        alphas = jax.nn.softmax(meta_params["alpha_logits"]) * self.n_bellman_iterations
+        return alphas @ td_losses.mean(axis=0), td_losses.mean(axis=0)
 
     def compute_target(self, sample: ReplayElement, next_q_values: jax.Array):
         # shape of next_q_values (n_bellman_iterations, next_states, n_actions)
@@ -147,10 +150,15 @@ class MetaiSDQN:
 
     @partial(jax.jit, static_argnames="self")
     def best_action(self, params: FrozenDict, state: jnp.ndarray, key: jax.Array):
-        idx_network = jax.random.randint(key, (), 0, self.n_bellman_iterations)
+        q_values = self.network.apply_fn(params["params"], state)[0][1:]
+        idx_network = jax.random.choice(
+            key, jnp.arange(0, self.n_bellman_iterations), (), p=jax.nn.softmax(params["meta_params"]["alpha_logits"])
+        )
+        return jnp.argmax(q_values[idx_network])
 
-        # computes the best action for a single state from a uniformly chosen online network
-        return jnp.argmax(self.network.apply_fn(params, state)[0][1 + idx_network])
+    @property
+    def all_params(self):
+        return {"params": self.params, "meta_params": self.meta_params}
 
     def get_model(self):
         return {"params": self.params}
