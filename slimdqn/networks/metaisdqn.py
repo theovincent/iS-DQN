@@ -36,9 +36,7 @@ class MetaiSDQN:
         def apply(params, state):
             return self.network.apply(params, state).reshape((-1, 1 + self.n_bellman_iterations, n_actions))
 
-        self.meta_params = {
-            "alpha_logits": jnp.array([10.0] + [-10.0] * (self.n_bellman_iterations - 1), dtype=jnp.float32)
-        }  # for alphas = (1, 0, 0,...)
+        self.meta_params = {"alpha_logits": jnp.zeros(self.n_bellman_iterations, dtype=jnp.float32)}
         self.network.apply_fn = apply
         self.params = self.network.init(key, jnp.zeros(observation_dim, dtype=jnp.float32))
 
